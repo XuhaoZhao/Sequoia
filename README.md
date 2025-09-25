@@ -83,7 +83,9 @@ conda activate sequoia39
 
 * Windows
 
-    下载 [ta-lib-0.4.0-msvc.zip](http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-msvc.zip)，解压到 ``C:\ta-lib``
+使用 conda 安装，conda 会自动处理
+conda install -c conda-forge ta-lib
+要观察ta-lib的版本号，相应的修改requirements的版本号
 
 
 
