@@ -88,7 +88,7 @@ class IndustryAnalysis:
         os.makedirs(self.data_dir)
         print(f"已重建历史数据目录: {self.data_dir}")
     
-    def collect_all_historical_data(self):
+    def collect_all_historical_data(self, delay_seconds=None):
         """每天早晨8点定时获取所有板块的历史数据"""
         print(f"开始获取所有板块历史数据 - {datetime.now()}")
         
@@ -96,13 +96,25 @@ class IndustryAnalysis:
         self.clean_historical_data_dir()
         
         boards = self.get_all_boards()
+        total_boards = len(boards)
         
-        for board in boards:
-            print(f"正在获取{board}的历史数据...")
+        # 如果没有指定延迟时间，按照1小时完成所有板块来计算平均延迟
+        if delay_seconds is None:
+            delay_seconds = 3600 / total_boards if total_boards > 0 else 1
+            print(f"未指定延迟时间，按1小时完成{total_boards}个板块计算，每个板块延迟{delay_seconds:.2f}秒")
+        else:
+            estimated_total_time = delay_seconds * total_boards
+            print(f"使用指定延迟时间{delay_seconds}秒，预计总耗时{estimated_total_time/60:.1f}分钟")
+        
+        for i, board in enumerate(boards, 1):
+            print(f"正在获取{board}的历史数据... ({i}/{total_boards})")
             hist_data = self.get_historical_data(board, "5")
             if hist_data is not None:
                 self.save_historical_data(board, hist_data, "5")
-            time.sleep(1)  # 避免频繁调用接口
+            
+            # 最后一个板块不需要延迟
+            if i < total_boards:
+                time.sleep(delay_seconds)
         
         print(f"所有板块历史数据获取完成 - {datetime.now()}")
     
@@ -350,12 +362,63 @@ if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "monitor":
         analyzer.start_monitoring()
     elif len(sys.argv) > 1 and sys.argv[1] == "collect":
-        analyzer.collect_all_historical_data()
+        delay_seconds = None
+        if len(sys.argv) > 2:
+            try:
+                delay_seconds = float(sys.argv[2])
+                print(f"使用指定延迟时间: {delay_seconds}秒")
+            except ValueError:
+                print("延迟时间参数无效，使用默认计算方式")
+        analyzer.collect_all_historical_data(delay_seconds)
     elif len(sys.argv) > 1 and sys.argv[1] == "analyze":
         analyzer.run_analysis()
     else:
-        print("使用方法:")
-        print("  python industry_analysis.py monitor   # 启动监控模式")
-        print("  python industry_analysis.py collect   # 手动获取历史数据")
-        print("  python industry_analysis.py analyze   # 手动分析")
+        # 交互式菜单，方便在VSCode中运行
+        print("=== 板块MACD分析系统 ===")
+        print("1. 启动监控模式（定时任务）")
+        print("2. 手动获取历史数据")
+        print("3. 手动分析所有板块")
+        print("4. 退出")
+        print()
+        print("命令行使用方法:")
+        print("  python industry_analysis.py monitor             # 启动监控模式")
+        print("  python industry_analysis.py collect             # 手动获取历史数据（自动计算延迟）")
+        print("  python industry_analysis.py collect <延迟秒数>    # 手动获取历史数据（指定延迟）")
+        print("  python industry_analysis.py analyze             # 手动分析")
+        print()
+        
+        while True:
+            try:
+                choice = input("请选择功能 (1-4): ").strip()
+                
+                if choice == "1":
+                    print("启动监控模式...")
+                    analyzer.start_monitoring()
+                    break
+                elif choice == "2":
+                    delay_input = input("请输入延迟时间（秒，回车使用自动计算）: ").strip()
+                    delay_seconds = None
+                    if delay_input:
+                        try:
+                            delay_seconds = float(delay_input)
+                        except ValueError:
+                            print("输入的延迟时间无效，将使用自动计算")
+                    print("开始获取历史数据...")
+                    analyzer.collect_all_historical_data(delay_seconds)
+                    break
+                elif choice == "3":
+                    print("开始分析所有板块...")
+                    analyzer.run_analysis()
+                    break
+                elif choice == "4":
+                    print("退出程序")
+                    break
+                else:
+                    print("无效选择，请输入1-4")
+            except KeyboardInterrupt:
+                print("\n程序已退出")
+                break
+            except Exception as e:
+                print(f"发生错误: {e}")
+                break
 
