@@ -21,6 +21,7 @@ def resample_and_macd(df, rule):
     ohlcv = df['price'].resample(rule).ohlc()
     ohlcv['volume'] = df['volume'].resample(rule).sum()
     ohlcv.dropna(inplace=True)
+    print(f"[resample_and_macd] OHLCV数据行数: {len(ohlcv)} (周期: {rule})")
     
     close = ohlcv['close'].values
     if len(close) < 20:  # 数据太少就不计算
@@ -28,6 +29,10 @@ def resample_and_macd(df, rule):
     fast, slow, signal = 12, 26, 9
 
     dif, dea, hist = talib.MACD(close, fastperiod=fast, slowperiod=slow, signalperiod=signal)
+    print(f"[resample_and_macd] MACD计算后DIF数据行数: {len(dif)} (周期: {rule})")
+    print(dif)
+
+
     ohlcv['DIF'] = dif
     ohlcv['DEA'] = dea
     ohlcv['HIST'] = hist
@@ -71,6 +76,7 @@ app.layout = html.Div([
 )
 def update_macd(symbol, periods, n_intervals):
     df = get_intraday(symbol)
+    print(f"[update_macd] 原始分时数据行数: {len(df)} (股票: {symbol})")
     fig = make_subplots(
         rows=len(periods)*2, cols=1, shared_xaxes=True,
         vertical_spacing=0.02,
