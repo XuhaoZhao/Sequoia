@@ -9,40 +9,24 @@ import schedule
 import time
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 import threading
 import numpy as np
 
 
-
-# #所有行业板块实时
-# stock_board_industry_name_em = ak.stock_board_industry_name_em()
-
-# print("所有板块名称:")
-# print(stock_board_industry_name_em['板块名称'].tolist())
-# # ['能源金属', '小金属', '航天航空', '半导体', '有色金属', '电池', '电源设备', '光伏设备', '船舶制造', '医疗服务', '汽车整车', '贵金属']
-# print(stock_board_industry_name_em)
-# #     排名  板块名称    板块代码       最新价      涨跌额   涨跌幅             总市值   换手率  上涨家数  下跌家数   领涨股票  领涨股票-涨跌幅
-# # 0    1  能源金属  BK1015    694.63    33.40  5.05    542864800000  9.08    13     0   盛屯矿业     10.02
-# # 1    2   小金属  BK1027   3061.87    80.24  2.69   1189946448000  3.61    34     5   锡业股份      9.98
-# # 2    3  航天航空  BK0480  53990.25  1324.85  2.52   1312159792000  2.50    41     5   中航沈飞     10.00
-# #单行业板块分时历史
-# stock_board_industry_hist_min_em_df = ak.stock_board_industry_hist_min_em(symbol="银行", period="5")
-# print(stock_board_industry_hist_min_em_df)
-# #                   日期时间       开盘       收盘       最高       最低   涨跌幅    涨跌额      成交量           成交额    振幅   换手率
-# # 0     2025-08-18 09:35  4242.80  4249.01  4250.60  4227.13  0.12   5.03  4829616  3.743659e+09  0.55  0.04
-# # 1     2025-08-18 09:40  4248.05  4259.35  4261.86  4244.46  0.24  10.34  2856570  2.054416e+09  0.41  0.02
-# # 2     2025-08-18 09:45  4259.94  4263.56  4270.19  4258.19  0.10   4.21  2079865  1.459746e+09  0.28  0.02
-
-
-class IndustryAnalysis:
+class IndustryDataCollector:
+    """数据收集器，负责历史数据和实时数据的获取和保存"""
     def __init__(self):
         self.data_dir = "industry_data"
-        self.realtime_data = {}
-        self.historical_data = {}
+        self.realtime_dir = os.path.join(self.data_dir, "realtime")
+        self.historical_dir = os.path.join(self.data_dir, "historical")
         
-        if not os.path.exists(self.data_dir):
-            os.makedirs(self.data_dir)
+        for dir_path in [self.data_dir, self.realtime_dir, self.historical_dir]:
+            if not os.path.exists(dir_path):
+                os.makedirs(dir_path)
+        
+        self.realtime_data = {}
+        self.current_date = datetime.now().strftime('%Y-%m-%d')
     
     def get_all_boards(self):
         """获取所有板块名称"""
@@ -65,13 +49,13 @@ class IndustryAnalysis:
     
     def save_historical_data(self, board_name, data, period="5"):
         """保存历史数据到文件"""
-        filename = os.path.join(self.data_dir, f"{board_name}_{period}min_historical.csv")
+        filename = os.path.join(self.historical_dir, f"{board_name}_{period}min_historical.csv")
         data.to_csv(filename, index=False, encoding='utf-8')
         print(f"已保存{board_name}历史数据到{filename}")
     
     def load_historical_data(self, board_name, period="5"):
         """从文件加载历史数据"""
-        filename = os.path.join(self.data_dir, f"{board_name}_{period}min_historical.csv")
+        filename = os.path.join(self.historical_dir, f"{board_name}_{period}min_historical.csv")
         if os.path.exists(filename):
             data = pd.read_csv(filename, encoding='utf-8')
             data['日期时间'] = pd.to_datetime(data['日期时间'])
@@ -80,13 +64,13 @@ class IndustryAnalysis:
     
     def clean_historical_data_dir(self):
         """清理历史数据文件夹"""
-        if os.path.exists(self.data_dir):
+        if os.path.exists(self.historical_dir):
             import shutil
-            shutil.rmtree(self.data_dir)
-            print(f"已清理历史数据目录: {self.data_dir}")
+            shutil.rmtree(self.historical_dir)
+            print(f"已清理历史数据目录: {self.historical_dir}")
         
-        os.makedirs(self.data_dir)
-        print(f"已重建历史数据目录: {self.data_dir}")
+        os.makedirs(self.historical_dir)
+        print(f"已重建历史数据目录: {self.historical_dir}")
     
     def collect_all_historical_data(self, delay_seconds=None):
         """每天早晨8点定时获取所有板块的历史数据"""
@@ -170,6 +154,82 @@ class IndustryAnalysis:
         
         return period_start
     
+    def save_realtime_data_to_disk(self):
+        """将内存中的实时数据保存到磁盘"""
+        if not self.realtime_data:
+            return
+        
+        for board_name, periods in self.realtime_data.items():
+            if not periods:
+                continue
+            
+            # 按日期保存实时数据
+            filename = os.path.join(self.realtime_dir, f"{board_name}_{self.current_date}_realtime.csv")
+            
+            # 转换为DataFrame格式
+            rows = []
+            for period in periods:
+                rows.append({
+                    '日期时间': period['period_start'],
+                    '开盘': period['open'],
+                    '收盘': period['close'],
+                    '最高': period['high'],
+                    '最低': period['low'],
+                    '成交量': period['volume'],
+                    '成交额': period['amount']
+                })
+            
+            if rows:
+                df = pd.DataFrame(rows)
+                
+                # 如果文件已存在，追加数据（去重）
+                if os.path.exists(filename):
+                    existing_df = pd.read_csv(filename, encoding='utf-8')
+                    existing_df['日期时间'] = pd.to_datetime(existing_df['日期时间'])
+                    df['日期时间'] = pd.to_datetime(df['日期时间'])
+                    
+                    # 合并并去重
+                    combined_df = pd.concat([existing_df, df], ignore_index=True)
+                    combined_df = combined_df.drop_duplicates(subset=['日期时间']).sort_values('日期时间')
+                    combined_df.to_csv(filename, index=False, encoding='utf-8')
+                else:
+                    df.to_csv(filename, index=False, encoding='utf-8')
+                
+                print(f"已保存{board_name}实时数据到{filename}")
+    
+    def load_realtime_data_from_disk(self, board_name, date=None):
+        """从磁盘加载实时数据"""
+        if date is None:
+            date = self.current_date
+        
+        filename = os.path.join(self.realtime_dir, f"{board_name}_{date}_realtime.csv")
+        if os.path.exists(filename):
+            data = pd.read_csv(filename, encoding='utf-8')
+            data['日期时间'] = pd.to_datetime(data['日期时间'])
+            return data
+        return None
+    
+    def collect_realtime_data(self):
+        """每分钟收集实时数据并保存到磁盘"""
+        current_date_str = datetime.now().strftime('%Y-%m-%d')
+        
+        # 如果日期变了，先保存昨天的数据，然后清空内存
+        if current_date_str != self.current_date:
+            print(f"日期变更：{self.current_date} -> {current_date_str}")
+            self.save_realtime_data_to_disk()
+            self.realtime_data = {}
+            self.current_date = current_date_str
+        
+        realtime_df = self.get_realtime_data()
+        if realtime_df is not None:
+            period_start = self.aggregate_to_5min(realtime_df)
+            
+            # 每5分钟保存一次数据到磁盘
+            if period_start.minute % 5 == 0:
+                self.save_realtime_data_to_disk()
+            
+            print(f"实时数据已更新 - {datetime.now()}")
+    
     def combine_historical_and_realtime(self, board_name):
         """合并历史数据和实时数据"""
         hist_data = self.load_historical_data(board_name)
@@ -177,29 +237,72 @@ class IndustryAnalysis:
         if hist_data is None:
             return None
         
-        if board_name not in self.realtime_data or not self.realtime_data[board_name]:
+        # 加载今天的实时数据（从磁盘）
+        today_realtime = self.load_realtime_data_from_disk(board_name)
+        
+        # 加载内存中的实时数据
+        memory_realtime_rows = []
+        if board_name in self.realtime_data and self.realtime_data[board_name]:
+            for period in self.realtime_data[board_name]:
+                memory_realtime_rows.append({
+                    '日期时间': period['period_start'],
+                    '开盘': period['open'],
+                    '收盘': period['close'],
+                    '最高': period['high'],
+                    '最低': period['low'],
+                    '成交量': period['volume'],
+                    '成交额': period['amount']
+                })
+        
+        # 合并所有数据
+        all_data = [hist_data]
+        
+        if today_realtime is not None:
+            all_data.append(today_realtime)
+        
+        if memory_realtime_rows:
+            memory_realtime_df = pd.DataFrame(memory_realtime_rows)
+            all_data.append(memory_realtime_df)
+        
+        if len(all_data) == 1:
             return hist_data
         
-        # 转换实时数据格式
-        realtime_rows = []
-        for period in self.realtime_data[board_name]:
-            realtime_rows.append({
-                '日期时间': period['period_start'],
-                '开盘': period['open'],
-                '收盘': period['close'],
-                '最高': period['high'],
-                '最低': period['low'],
-                '成交量': period['volume'],
-                '成交额': period['amount']
-            })
-        
-        realtime_df = pd.DataFrame(realtime_rows)
-        
-        # 合并数据
-        combined = pd.concat([hist_data, realtime_df], ignore_index=True)
-        combined = combined.sort_values('日期时间').reset_index(drop=True)
+        combined = pd.concat(all_data, ignore_index=True)
+        combined = combined.drop_duplicates(subset=['日期时间']).sort_values('日期时间').reset_index(drop=True)
         
         return combined
+    
+    def start_monitoring(self):
+        """启动数据收集监控系统"""
+        # 定时任务
+        schedule.every().day.at("08:00").do(self.collect_all_historical_data)
+        schedule.every().minute.do(self.collect_realtime_data)
+        # 每15分钟强制保存一次实时数据
+        schedule.every(15).minutes.do(self.save_realtime_data_to_disk)
+        
+        print("数据收集系统已启动...")
+        print("- 每天8:00获取历史数据")
+        print("- 每分钟获取实时数据")
+        print("- 每15分钟保存实时数据到磁盘")
+        print("- 程序停止时会自动保存当前实时数据")
+        
+        try:
+            while True:
+                schedule.run_pending()
+                time.sleep(1)
+        except KeyboardInterrupt:
+            print("\n收到停止信号，正在保存数据...")
+            self.save_realtime_data_to_disk()
+            print("数据已保存，程序退出")
+
+
+class IndustryAnalyzer:
+    """数据分析器，负责技术指标分析"""
+    def __init__(self, data_collector=None):
+        if data_collector is None:
+            self.data_collector = IndustryDataCollector()
+        else:
+            self.data_collector = data_collector
     
     def resample_data(self, data, period):
         """重采样数据到指定周期"""
@@ -269,7 +372,7 @@ class IndustryAnalysis:
     
     def analyze_board_macd(self, board_name):
         """分析单个板块的MACD"""
-        base_data = self.combine_historical_and_realtime(board_name)
+        base_data = self.data_collector.combine_historical_and_realtime(board_name)
         
         if base_data is None or len(base_data) < 26:
             print(f"{board_name}: 数据不足，无法计算MACD")
@@ -316,16 +419,9 @@ class IndustryAnalysis:
                 for signal in signals[-3:]:  # 只显示最近3个信号
                     print(f"    {signal['time']} - {signal['type']}: MACD={signal['macd']:.4f}, Signal={signal['signal']:.4f}")
     
-    def collect_realtime_data(self):
-        """每分钟收集实时数据"""
-        realtime_df = self.get_realtime_data()
-        if realtime_df is not None:
-            period_start = self.aggregate_to_5min(realtime_df)
-            print(f"实时数据已更新 - {datetime.now()}")
-    
     def analyze_all_boards(self):
         """分析所有板块的MACD"""
-        boards = self.get_all_boards()
+        boards = self.data_collector.get_all_boards()
         
         for board in boards:
             try:
@@ -333,34 +429,116 @@ class IndustryAnalysis:
             except Exception as e:
                 print(f"分析{board}失败: {e}")
     
-    def start_monitoring(self):
-        """启动监控系统"""
-        # 定时任务
-        schedule.every().day.at("08:00").do(self.collect_all_historical_data)
-        schedule.every().minute.do(self.collect_realtime_data)
-        
-        print("板块监控系统已启动...")
-        print("- 每天8:00获取历史数据")
-        print("- 每分钟获取实时数据")
-        
-        while True:
-            schedule.run_pending()
-            time.sleep(1)
-    
     def run_analysis(self):
         """运行分析（手动触发）"""
         print("开始分析所有板块...")
         self.analyze_all_boards()
 
 
+class IndustryDataReader:
+    """数据读取器，负责为分析提供数据"""
+    def __init__(self, data_dir="industry_data"):
+        self.data_dir = data_dir
+        self.realtime_dir = os.path.join(data_dir, "realtime")
+        self.historical_dir = os.path.join(data_dir, "historical")
+    
+    def get_available_boards(self):
+        """获取有数据的板块列表"""
+        boards = set()
+        
+        # 从历史数据目录获取
+        if os.path.exists(self.historical_dir):
+            for filename in os.listdir(self.historical_dir):
+                if filename.endswith('_5min_historical.csv'):
+                    board_name = filename.replace('_5min_historical.csv', '')
+                    boards.add(board_name)
+        
+        # 从实时数据目录获取
+        if os.path.exists(self.realtime_dir):
+            for filename in os.listdir(self.realtime_dir):
+                if filename.endswith('_realtime.csv'):
+                    parts = filename.replace('_realtime.csv', '').split('_')
+                    if len(parts) >= 2:
+                        board_name = '_'.join(parts[:-1])  # 移除日期部分
+                        boards.add(board_name)
+        
+        return list(boards)
+    
+    def get_available_dates(self, board_name):
+        """获取指定板块可用的日期列表"""
+        dates = set()
+        
+        if os.path.exists(self.realtime_dir):
+            for filename in os.listdir(self.realtime_dir):
+                if filename.startswith(f"{board_name}_") and filename.endswith('_realtime.csv'):
+                    # 提取日期
+                    date_part = filename.replace(f"{board_name}_", '').replace('_realtime.csv', '')
+                    try:
+                        datetime.strptime(date_part, '%Y-%m-%d')
+                        dates.add(date_part)
+                    except ValueError:
+                        continue
+        
+        return sorted(list(dates))
+    
+    def load_board_data(self, board_name, start_date=None, end_date=None):
+        """加载指定板块的完整数据（历史+实时）"""
+        # 加载历史数据
+        hist_file = os.path.join(self.historical_dir, f"{board_name}_5min_historical.csv")
+        all_data = []
+        
+        if os.path.exists(hist_file):
+            hist_data = pd.read_csv(hist_file, encoding='utf-8')
+            hist_data['日期时间'] = pd.to_datetime(hist_data['日期时间'])
+            all_data.append(hist_data)
+        
+        # 加载实时数据
+        available_dates = self.get_available_dates(board_name)
+        for date in available_dates:
+            if start_date and date < start_date:
+                continue
+            if end_date and date > end_date:
+                continue
+            
+            rt_file = os.path.join(self.realtime_dir, f"{board_name}_{date}_realtime.csv")
+            if os.path.exists(rt_file):
+                rt_data = pd.read_csv(rt_file, encoding='utf-8')
+                rt_data['日期时间'] = pd.to_datetime(rt_data['日期时间'])
+                all_data.append(rt_data)
+        
+        if not all_data:
+            return None
+        
+        # 合并所有数据
+        combined = pd.concat(all_data, ignore_index=True)
+        combined = combined.drop_duplicates(subset=['日期时间']).sort_values('日期时间').reset_index(drop=True)
+        
+        # 按时间范围过滤
+        if start_date:
+            combined = combined[combined['日期时间'] >= start_date]
+        if end_date:
+            combined = combined[combined['日期时间'] <= end_date]
+        
+        return combined
+    
+    def get_latest_data(self, board_name, periods=100):
+        """获取指定板块最新的N个周期数据"""
+        data = self.load_board_data(board_name)
+        if data is not None and len(data) > 0:
+            return data.tail(periods)
+        return None
+
+
 if __name__ == "__main__":
-    analyzer = IndustryAnalysis()
+    data_collector = IndustryDataCollector()
+    analyzer = IndustryAnalyzer(data_collector)
+    data_reader = IndustryDataReader()
     
     # 可以选择启动监控模式或手动分析模式
     import sys
     
     if len(sys.argv) > 1 and sys.argv[1] == "monitor":
-        analyzer.start_monitoring()
+        data_collector.start_monitoring()
     elif len(sys.argv) > 1 and sys.argv[1] == "collect":
         delay_seconds = None
         if len(sys.argv) > 2:
@@ -369,31 +547,48 @@ if __name__ == "__main__":
                 print(f"使用指定延迟时间: {delay_seconds}秒")
             except ValueError:
                 print("延迟时间参数无效，使用默认计算方式")
-        analyzer.collect_all_historical_data(delay_seconds)
+        data_collector.collect_all_historical_data(delay_seconds)
     elif len(sys.argv) > 1 and sys.argv[1] == "analyze":
         analyzer.run_analysis()
+    elif len(sys.argv) > 1 and sys.argv[1] == "info":
+        print("=== 数据信息 ===")
+        boards = data_reader.get_available_boards()
+        print(f"可用板块数量: {len(boards)}")
+        print(f"板块列表: {boards[:10]}{'...' if len(boards) > 10 else ''}")
+        
+        if boards:
+            sample_board = boards[0]
+            dates = data_reader.get_available_dates(sample_board)
+            print(f"\n{sample_board} 可用日期: {dates}")
+            
+            latest_data = data_reader.get_latest_data(sample_board, 5)
+            if latest_data is not None:
+                print(f"\n{sample_board} 最新5条数据:")
+                print(latest_data[['日期时间', '开盘', '收盘', '最高', '最低']].to_string())
     else:
         # 交互式菜单，方便在VSCode中运行
-        print("=== 板块MACD分析系统 ===")
-        print("1. 启动监控模式（定时任务）")
+        print("=== 板块数据收集与分析系统 ===")
+        print("1. 启动数据收集监控模式")
         print("2. 手动获取历史数据")
         print("3. 手动分析所有板块")
-        print("4. 退出")
+        print("4. 查看数据信息")
+        print("5. 退出")
         print()
         print("命令行使用方法:")
-        print("  python industry_analysis.py monitor             # 启动监控模式")
-        print("  python industry_analysis.py collect             # 手动获取历史数据（自动计算延迟）")
-        print("  python industry_analysis.py collect <延迟秒数>    # 手动获取历史数据（指定延迟）")
+        print("  python industry_analysis.py monitor             # 启动数据收集监控")
+        print("  python industry_analysis.py collect             # 手动获取历史数据")
+        print("  python industry_analysis.py collect <延迟秒数>    # 指定延迟获取历史数据")
         print("  python industry_analysis.py analyze             # 手动分析")
+        print("  python industry_analysis.py info                # 查看数据信息")
         print()
         
         while True:
             try:
-                choice = input("请选择功能 (1-4): ").strip()
+                choice = input("请选择功能 (1-5): ").strip()
                 
                 if choice == "1":
-                    print("启动监控模式...")
-                    analyzer.start_monitoring()
+                    print("启动数据收集监控模式...")
+                    data_collector.start_monitoring()
                     break
                 elif choice == "2":
                     delay_input = input("请输入延迟时间（秒，回车使用自动计算）: ").strip()
@@ -404,21 +599,35 @@ if __name__ == "__main__":
                         except ValueError:
                             print("输入的延迟时间无效，将使用自动计算")
                     print("开始获取历史数据...")
-                    analyzer.collect_all_historical_data(delay_seconds)
+                    data_collector.collect_all_historical_data(delay_seconds)
                     break
                 elif choice == "3":
                     print("开始分析所有板块...")
                     analyzer.run_analysis()
                     break
                 elif choice == "4":
+                    print("查看数据信息...")
+                    boards = data_reader.get_available_boards()
+                    print(f"可用板块数量: {len(boards)}")
+                    if boards:
+                        print(f"板块列表: {boards[:10]}{'...' if len(boards) > 10 else ''}")
+                        sample_board = boards[0]
+                        dates = data_reader.get_available_dates(sample_board)
+                        print(f"\n{sample_board} 可用日期: {dates}")
+                        
+                        latest_data = data_reader.get_latest_data(sample_board, 5)
+                        if latest_data is not None:
+                            print(f"\n{sample_board} 最新5条数据:")
+                            print(latest_data[['日期时间', '开盘', '收盘', '最高', '最低']].to_string())
+                    break
+                elif choice == "5":
                     print("退出程序")
                     break
                 else:
-                    print("无效选择，请输入1-4")
+                    print("无效选择，请输入1-5")
             except KeyboardInterrupt:
                 print("\n程序已退出")
                 break
             except Exception as e:
                 print(f"发生错误: {e}")
                 break
-
