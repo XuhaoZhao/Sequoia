@@ -27,6 +27,63 @@ class IndustryDataCollector:
         
         self.realtime_data = {}
         self.current_date = datetime.now().strftime('%Y-%m-%d')
+        
+        # 初始化A股交易时间的5分钟时间戳
+        self.trading_timestamps = self._generate_trading_timestamps()
+    
+    def _generate_trading_timestamps(self, date=None):
+        """生成A股交易时间的5分钟时间戳序列"""
+        if date is None:
+            date = datetime.now().date()
+        elif isinstance(date, str):
+            date = datetime.strptime(date, '%Y-%m-%d').date()
+        
+        timestamps = []
+        
+        # 上午交易时间：9:30-11:30
+        current_time = datetime.combine(date, datetime.strptime("09:30", "%H:%M").time())
+        end_morning = datetime.combine(date, datetime.strptime("11:30", "%H:%M").time())
+        
+        while current_time <= end_morning:
+            timestamps.append(current_time)
+            current_time += timedelta(minutes=5)
+        
+        # 下午交易时间：13:00-15:00
+        current_time = datetime.combine(date, datetime.strptime("13:00", "%H:%M").time())
+        end_afternoon = datetime.combine(date, datetime.strptime("15:00", "%H:%M").time())
+        
+        while current_time <= end_afternoon:
+            timestamps.append(current_time)
+            current_time += timedelta(minutes=5)
+        
+        return timestamps
+    
+    def _find_target_timestamp(self, data_time):
+        """根据数据时间找到对应的目标时间戳（5分钟周期）"""
+        date = data_time.date()
+        
+        # 如果日期变了，重新生成当天的时间戳
+        if not hasattr(self, '_cached_date') or self._cached_date != date:
+            self.trading_timestamps = self._generate_trading_timestamps(date)
+            self._cached_date = date
+        
+        # 找到数据应该归属的5分钟时间戳
+        for i, timestamp in enumerate(self.trading_timestamps):
+            # 如果是第一个时间戳，从开盘开始的数据都归到第一个时间戳
+            if i == 0 and data_time <= timestamp:
+                return timestamp
+            
+            # 如果不是第一个时间戳，找到前一个和当前时间戳之间的范围
+            if i > 0:
+                prev_timestamp = self.trading_timestamps[i-1]
+                if prev_timestamp < data_time <= timestamp:
+                    return timestamp
+        
+        # 如果数据时间超过了最后一个时间戳，归到最后一个时间戳
+        if self.trading_timestamps and data_time > self.trading_timestamps[-1]:
+            return self.trading_timestamps[-1]
+        
+        return None
     
     def get_all_boards(self):
         """获取所有板块名称"""
@@ -112,75 +169,97 @@ class IndustryDataCollector:
             return None
     
     def aggregate_to_5min(self, realtime_df):
-        """将实时数据聚合成5分钟数据"""
+        """将实时数据聚合成5分钟数据，使用预定义的交易时间戳"""
         current_time = datetime.now()
-        minute = current_time.minute
+        current_date = current_time.date()
         
-        # 计算5分钟周期的起始时间
-        period_start_minute = (minute // 5) * 5
-        period_start = current_time.replace(minute=period_start_minute, second=0, microsecond=0)
-        
-        aggregated_data = []
+        # 确保我们有当天的时间戳
+        if not hasattr(self, '_cached_date') or self._cached_date != current_date:
+            self.trading_timestamps = self._generate_trading_timestamps(current_date)
+            self._cached_date = current_date
         
         for _, row in realtime_df.iterrows():
             board_name = row['板块名称']
             price = row['最新价']
+            volume = row.get('成交量', 0)
+            amount = row.get('成交额', 0)
             
-            # 如果该板块还没有5分钟聚合数据，初始化
+            # 找到当前数据应该归属的5分钟时间戳
+            target_timestamp = self._find_target_timestamp(current_time)
+            if target_timestamp is None:
+                continue  # 不在交易时间内
+            
+            # 如果该板块还没有数据，初始化所有时间戳的数据结构
             if board_name not in self.realtime_data:
-                self.realtime_data[board_name] = []
-            
-            # 检查是否需要新的5分钟周期
-            if not self.realtime_data[board_name] or \
-               self.realtime_data[board_name][-1]['period_start'] != period_start:
+                self.realtime_data[board_name] = {}
                 
-                self.realtime_data[board_name].append({
-                    'period_start': period_start,
-                    'open': price,
-                    'high': price,
-                    'low': price,
-                    'close': price,
-                    'volume': row.get('成交量', 0),
-                    'amount': row.get('成交额', 0)
-                })
+                # 为所有交易时间戳初始化数据结构
+                for ts in self.trading_timestamps:
+                    self.realtime_data[board_name][ts] = {
+                        'timestamp': ts,
+                        'open': None,
+                        'high': None,
+                        'low': None,
+                        'close': None,
+                        'volume': 0,
+                        'amount': 0,
+                        'data_points': 0  # 记录该时间段内收到的数据点数量
+                    }
+            
+            # 获取目标时间戳的数据
+            target_data = self.realtime_data[board_name][target_timestamp]
+            
+            # 更新该时间戳的数据
+            if target_data['open'] is None:
+                # 第一次收到该时间段的数据
+                target_data['open'] = price
+                target_data['high'] = price
+                target_data['low'] = price
+                target_data['close'] = price
             else:
-                # 更新当前5分钟周期的数据
-                current_period = self.realtime_data[board_name][-1]
-                current_period['high'] = max(current_period['high'], price)
-                current_period['low'] = min(current_period['low'], price)
-                current_period['close'] = price
-                current_period['volume'] += row.get('成交量', 0)
-                current_period['amount'] += row.get('成交额', 0)
+                # 更新高低价
+                target_data['high'] = max(target_data['high'], price)
+                target_data['low'] = min(target_data['low'], price)
+                target_data['close'] = price  # 收盘价始终是最新价
+            
+            # 累计成交量和成交额
+            target_data['volume'] += volume
+            target_data['amount'] += amount
+            target_data['data_points'] += 1
         
-        return period_start
+        return current_time
     
     def save_realtime_data_to_disk(self):
         """将内存中的实时数据保存到磁盘"""
         if not self.realtime_data:
             return
         
-        for board_name, periods in self.realtime_data.items():
-            if not periods:
+        for board_name, timestamp_data in self.realtime_data.items():
+            if not timestamp_data:
                 continue
             
             # 按日期保存实时数据
             filename = os.path.join(self.realtime_dir, f"{board_name}_{self.current_date}_realtime.csv")
             
-            # 转换为DataFrame格式
+            # 转换为DataFrame格式，只保存有数据的时间戳
             rows = []
-            for period in periods:
-                rows.append({
-                    '日期时间': period['period_start'],
-                    '开盘': period['open'],
-                    '收盘': period['close'],
-                    '最高': period['high'],
-                    '最低': period['low'],
-                    '成交量': period['volume'],
-                    '成交额': period['amount']
-                })
+            for timestamp, data in timestamp_data.items():
+                # 只保存有实际数据的时间戳（至少收到过一次数据）
+                if data['open'] is not None and data['data_points'] > 0:
+                    rows.append({
+                        '日期时间': timestamp,
+                        '开盘': data['open'],
+                        '收盘': data['close'],
+                        '最高': data['high'],
+                        '最低': data['low'],
+                        '成交量': data['volume'],
+                        '成交额': data['amount']
+                    })
             
             if rows:
                 df = pd.DataFrame(rows)
+                # 按时间排序
+                df = df.sort_values('日期时间')
                 
                 # 如果文件已存在，追加数据（去重）
                 if os.path.exists(filename):
@@ -195,7 +274,7 @@ class IndustryDataCollector:
                 else:
                     df.to_csv(filename, index=False, encoding='utf-8')
                 
-                print(f"已保存{board_name}实时数据到{filename}")
+                print(f"已保存{board_name}实时数据到{filename}，共{len(rows)}个时间点")
     
     def load_realtime_data_from_disk(self, board_name, date=None):
         """从磁盘加载实时数据"""
@@ -222,10 +301,11 @@ class IndustryDataCollector:
         
         realtime_df = self.get_realtime_data()
         if realtime_df is not None:
-            period_start = self.aggregate_to_5min(realtime_df)
+            current_time = self.aggregate_to_5min(realtime_df)
             
-            # 每5分钟保存一次数据到磁盘
-            if period_start.minute % 5 == 0:
+            # 每个整5分钟时刻保存一次数据到磁盘
+            # 检查当前时间是否是整5分钟（例如9:30, 9:35, 9:40等）
+            if current_time.minute % 5 == 0 and current_time.second < 10:
                 self.save_realtime_data_to_disk()
             
             print(f"实时数据已更新 - {datetime.now()}")
@@ -243,16 +323,18 @@ class IndustryDataCollector:
         # 加载内存中的实时数据
         memory_realtime_rows = []
         if board_name in self.realtime_data and self.realtime_data[board_name]:
-            for period in self.realtime_data[board_name]:
-                memory_realtime_rows.append({
-                    '日期时间': period['period_start'],
-                    '开盘': period['open'],
-                    '收盘': period['close'],
-                    '最高': period['high'],
-                    '最低': period['low'],
-                    '成交量': period['volume'],
-                    '成交额': period['amount']
-                })
+            for timestamp, data in self.realtime_data[board_name].items():
+                # 只包含有实际数据的时间戳
+                if data['open'] is not None and data['data_points'] > 0:
+                    memory_realtime_rows.append({
+                        '日期时间': timestamp,
+                        '开盘': data['open'],
+                        '收盘': data['close'],
+                        '最高': data['high'],
+                        '最低': data['low'],
+                        '成交量': data['volume'],
+                        '成交额': data['amount']
+                    })
         
         # 合并所有数据
         all_data = [hist_data]

@@ -186,48 +186,48 @@ def test_directory_structure():
             print(f"{dir_name} 不存在")
 
 
-def main():
-    """主测试函数"""
-    print("IndustryDataCollector 测试程序")
-    print("=" * 50)
-    print(f"测试时间: {datetime.now()}")
-    print()
+# def main():
+#     """主测试函数"""
+#     print("IndustryDataCollector 测试程序")
+#     print("=" * 50)
+#     print(f"测试时间: {datetime.now()}")
+#     print()
     
-    try:
-        # 检查目录结构
-        test_directory_structure()
+#     try:
+#         # 检查目录结构
+#         test_directory_structure()
         
-        # 测试基本功能
-        test_basic_functions()
+#         # 测试基本功能
+#         test_basic_functions()
         
-        # 测试实时数据
-        test_realtime_data()
+#         # 测试实时数据
+#         test_realtime_data()
         
-        # 测试数据持久化
-        test_data_persistence()
+#         # 测试数据持久化
+#         test_data_persistence()
         
-        # 测试数据合并
-        test_data_combination()
+#         # 测试数据合并
+#         test_data_combination()
         
-        # 模拟监控模式
-        if len(sys.argv) > 1 and sys.argv[1] == "monitor":
-            test_monitoring_simulation()
+#         # 模拟监控模式
+#         if len(sys.argv) > 1 and sys.argv[1] == "monitor":
+#             test_monitoring_simulation()
         
-        print("\n" + "=" * 50)
-        print("所有测试完成！")
+#         print("\n" + "=" * 50)
+#         print("所有测试完成！")
         
-    except KeyboardInterrupt:
-        print("\n测试被用户中断")
-    except Exception as e:
-        print(f"\n测试过程中发生错误: {e}")
-        import traceback
-        traceback.print_exc()
+#     except KeyboardInterrupt:
+#         print("\n测试被用户中断")
+#     except Exception as e:
+#         print(f"\n测试过程中发生错误: {e}")
+#         import traceback
+#         traceback.print_exc()
 
 
-if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "help":
-        print("使用方法:")
-        print("  python test_data_collector.py          # 运行基本测试")
-        print("  python test_data_collector.py monitor  # 包含监控模式测试")
-    else:
-        main()
+# if __name__ == "__main__":
+#     if len(sys.argv) > 1 and sys.argv[1] == "help":
+#         print("使用方法:")
+#         print("  python test_data_collector.py          # 运行基本测试")
+#         print("  python test_data_collector.py monitor  # 包含监控模式测试")
+#     else:
+#         main()
