@@ -177,12 +177,14 @@ class IndustryDataCollector:
         if not hasattr(self, '_cached_date') or self._cached_date != current_date:
             self.trading_timestamps = self._generate_trading_timestamps(current_date)
             self._cached_date = current_date
+            print("hello")
         
         for _, row in realtime_df.iterrows():
             board_name = row['板块名称']
             price = row['最新价']
             volume = row.get('成交量', 0)
             amount = row.get('成交额', 0)
+            print(board_name,price,volume,amount)
             
             # 找到当前数据应该归属的5分钟时间戳
             target_timestamp = self._find_target_timestamp(current_time)
