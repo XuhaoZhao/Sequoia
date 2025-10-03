@@ -49,7 +49,7 @@ def test_realtime_data():
     if realtime_df is not None:
         print(f"获取到 {len(realtime_df)} 个板块的实时数据")
         print("前5个板块实时数据:")
-        print(realtime_df.head()[['板块名称', '最新价', '涨跌幅', '成交量']])
+        print(realtime_df.head()[['板块名称', '最新价', '涨跌幅']])
         
         # 测试聚合到5分钟
         print("\n2. 测试聚合到5分钟数据...")
