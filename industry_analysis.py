@@ -216,7 +216,7 @@ class IndustryDataCollector:
                 target_data['high'] = price
                 target_data['low'] = price
                 target_data['close'] = price
-                price("hello")
+                print("hello")
             else:
                 # 更新高低价
                 target_data['high'] = max(target_data['high'], price)
