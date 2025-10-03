@@ -46,6 +46,12 @@ def test_realtime_data():
     # 测试获取实时数据
     print("1. 测试获取实时数据...")
     realtime_df = collector.get_realtime_data()
+    period_start = collector.aggregate_to_5min(realtime_df)
+    time.sleep(60)
+    realtime_df = collector.get_realtime_data()
+    period_start = collector.aggregate_to_5min(realtime_df)
+    time.sleep(60)
+    realtime_df = collector.get_realtime_data()
     if realtime_df is not None:
         print(f"获取到 {len(realtime_df)} 个板块的实时数据")
         print("前5个板块实时数据:")
