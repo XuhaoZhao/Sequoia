@@ -8,8 +8,7 @@ import sys
 import os
 import time
 from datetime import datetime
-from industry_analysis import IndustryDataCollector
-
+from industry_analysis import IndustryDataCollector,IndustryAnalyzer
 
 def test_basic_functions():
     """测试基本功能"""
@@ -192,9 +191,12 @@ def test_directory_structure():
                 print(f"  前5个文件: {files[:5]}")
         else:
             print(f"{dir_name} 不存在")
-
+def test_analysis():
+    data_collector = IndustryDataCollector()
+    analyzer = IndustryAnalyzer(data_collector)
+    analyzer.analyze_all_boards()
 # 测试实时数据
-test_realtime_data()
+# test_realtime_data()
 # def main():
 #     """主测试函数"""
 #     print("IndustryDataCollector 测试程序")

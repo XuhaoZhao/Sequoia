@@ -226,7 +226,6 @@ class IndustryDataCollector:
             target_data['volume'] += volume
             target_data['amount'] += amount
             target_data['data_points'] += 1
-            print(self.realtime_data[board_name])
         
         return current_time
     
