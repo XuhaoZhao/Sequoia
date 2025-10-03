@@ -185,7 +185,8 @@ def test_directory_structure():
         else:
             print(f"{dir_name} 不存在")
 
-
+# 测试实时数据
+test_realtime_data()
 # def main():
 #     """主测试函数"""
 #     print("IndustryDataCollector 测试程序")
