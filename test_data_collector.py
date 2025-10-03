@@ -66,6 +66,7 @@ def test_realtime_data():
         if collector.realtime_data:
             print("已聚合的板块数量:", len(collector.realtime_data))
             sample_board = list(collector.realtime_data.keys())[0]
+            print(collector.realtime_data[sample_board])
             sample_data = collector.realtime_data[sample_board][-1]
             print(f"{sample_board} 最新聚合数据:")
             print(f"  开盘: {sample_data['open']}")
