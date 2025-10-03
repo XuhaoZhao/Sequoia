@@ -46,6 +46,7 @@ def test_realtime_data():
     # 测试获取实时数据
     print("1. 测试获取实时数据...")
     realtime_df = collector.get_realtime_data()
+    print(realtime_df)
     period_start = collector.aggregate_to_5min(realtime_df)
     time.sleep(60)
     realtime_df = collector.get_realtime_data()
