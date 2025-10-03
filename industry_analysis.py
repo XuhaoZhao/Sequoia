@@ -216,21 +216,17 @@ class IndustryDataCollector:
                 target_data['high'] = price
                 target_data['low'] = price
                 target_data['close'] = price
-                print(price)
-                print("hello")
             else:
                 # 更新高低价
                 target_data['high'] = max(target_data['high'], price)
                 target_data['low'] = min(target_data['low'], price)
                 target_data['close'] = price  # 收盘价始终是最新价
-                print("hello1")
-                print(price)
             
             # 累计成交量和成交额
             target_data['volume'] += volume
             target_data['amount'] += amount
             target_data['data_points'] += 1
-            print(target_data)
+            print(self.realtime_data[board_name][target_timestamp])
         
         return current_time
     
