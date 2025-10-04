@@ -477,7 +477,7 @@ class IndustryAnalyzer:
                 continue
             
             close_prices = period_data['收盘']
-            macd_line, signal_line, histogram = self.calculate_macd(close_prices)
+            macd_line, signal_line, histogram = self.calculate_macd(close_prices,5,13,5)
             
             if macd_line is not None:
                 signals = self.detect_macd_signals(macd_line, signal_line)
