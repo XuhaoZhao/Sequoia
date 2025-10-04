@@ -113,9 +113,11 @@ class IndustryDataCollector:
     def load_historical_data(self, board_name, period="5"):
         """从文件加载历史数据"""
         filename = os.path.join(self.historical_dir, f"{board_name}_{period}min_historical.csv")
+        print(filename)
         if os.path.exists(filename):
             data = pd.read_csv(filename, encoding='utf-8')
             data['日期时间'] = pd.to_datetime(data['日期时间'])
+            print("dedse")
             return data
         return None
     
@@ -315,7 +317,6 @@ class IndustryDataCollector:
         hist_data = self.load_historical_data(board_name)
         
         if hist_data is None:
-            print("hekkkk")
             return None
         
         # 加载今天的实时数据（从磁盘）
