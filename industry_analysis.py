@@ -113,11 +113,9 @@ class IndustryDataCollector:
     def load_historical_data(self, board_name, period="5"):
         """从文件加载历史数据"""
         filename = os.path.join(self.historical_dir, f"{board_name}_{period}min_historical.csv")
-        print(filename)
         if os.path.exists(filename):
             data = pd.read_csv(filename, encoding='utf-8')
             data['日期时间'] = pd.to_datetime(data['日期时间'])
-            print("dedse")
             return data
         return None
     
@@ -416,8 +414,7 @@ class IndustryAnalyzer:
         macd_line, signal_line, histogram = talib.MACD(close_array, 
                                                       fastperiod=fast, 
                                                       slowperiod=slow, 
-                                                      signalperiod=signal)
-        
+                                                      signalperiod=signal)        
         return pd.Series(macd_line, index=close_prices.index), \
                pd.Series(signal_line, index=close_prices.index), \
                pd.Series(histogram, index=close_prices.index)
@@ -500,7 +497,7 @@ class IndustryAnalyzer:
             print(f"\n{board_name} MACD信号:")
             for period, signals in results.items():
                 print(f"  {period}:")
-                for signal in signals[-3:]:  # 只显示最近3个信号
+                for signal in signals: 
                     print(f"    {signal['time']} - {signal['type']}: MACD={signal['macd']:.4f}, Signal={signal['signal']:.4f}")
     
     def analyze_all_boards(self):
