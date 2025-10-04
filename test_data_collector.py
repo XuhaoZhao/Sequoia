@@ -195,6 +195,7 @@ def test_analysis():
     data_collector = IndustryDataCollector()
     analyzer = IndustryAnalyzer(data_collector)
     analyzer.analyze_all_boards()
+test_analysis()
 # 测试实时数据
 # test_realtime_data()
 # def main():

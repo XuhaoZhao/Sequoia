@@ -150,3 +150,6 @@ end = '2019-06-17'
 
 ## 实时数据api
 https://akshare.akfamily.xyz/data/stock/stock.html#id12
+
+## ta-lib官网参考 
+https://github.com/TA-Lib/ta-lib-python
