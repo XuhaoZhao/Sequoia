@@ -497,9 +497,10 @@ class IndustryAnalyzer:
             print(f"\n{board_name} MACD信号:")
             for period, signals in results.items():
                 print(f"  {period}:")
-                for signal in signals: 
-                    print(f"    {signal['time']} - {signal['type']}: MACD={signal['macd']:.4f}, Signal={signal['signal']:.4f}")
-    
+                if board_name == "保险":
+                    for signal in signals: 
+                        print(f"    {signal['time']} - {signal['type']}: MACD={signal['macd']:.4f}, Signal={signal['signal']:.4f}")
+        
     def analyze_all_boards(self):
         """分析所有板块的MACD"""
         boards = self.data_collector.get_all_boards()
