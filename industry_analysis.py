@@ -315,6 +315,7 @@ class IndustryDataCollector:
         hist_data = self.load_historical_data(board_name)
         
         if hist_data is None:
+            print("hekkkk")
             return None
         
         # 加载今天的实时数据（从磁盘）
