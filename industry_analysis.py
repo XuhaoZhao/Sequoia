@@ -317,6 +317,7 @@ class IndustryDataCollector:
         """每分钟收集实时数据并保存到磁盘"""
         # 检查是否在交易时间内
         if not self._is_trading_time():
+            print("hello5")
             return
         
         current_date_str = datetime.now().strftime('%Y-%m-%d')
