@@ -12,7 +12,7 @@ import json
 from datetime import datetime, timedelta
 import threading
 import numpy as np
-
+import push
 
 class IndustryDataCollector:
     """数据收集器，负责历史数据和实时数据的获取和保存"""
@@ -500,6 +500,10 @@ class IndustryAnalyzer:
                 if board_name == "保险":
                     for signal in signals: 
                         print(f"    {signal['time']} - {signal['type']}: MACD={signal['macd']:.4f}, Signal={signal['signal']:.4f}")
+                        # 推送保险板块60分钟金叉信号
+                        if period == "60分钟" and signal['type'] == "金叉":
+                            message = f"保险板块60分钟MACD金叉信号\n时间: {signal['time']}\nMACD: {signal['macd']:.4f}\nSignal:{signal['signal']:.4f}"
+                            push.strategy(message)
         
     def analyze_all_boards(self):
         """分析所有板块的MACD"""

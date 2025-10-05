@@ -4,5 +4,5 @@ end_date:
 
 push:
   enable: false
-  wxpusher_uid: ""
-  wxpusher_token: ""
+  wxpusher_uid: "114286"
+  wxpusher_token: "AT_Yx4jtKrc2UqVwQ7a5yidYeTP36oZaMML"
