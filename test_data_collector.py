@@ -195,9 +195,14 @@ def test_analysis():
     data_collector = IndustryDataCollector()
     analyzer = IndustryAnalyzer(data_collector)
     analyzer.analyze_all_boards()
+def test_realtime_data_get():
+    data_collector = IndustryDataCollector()
+    data_collector.start_monitoring()
+# 测试数据分析
 # test_analysis()
 # 测试实时数据
-test_realtime_data()
+# test_realtime_data()
+test_realtime_data_get()
 # def main():
 #     """主测试函数"""
 #     print("IndustryDataCollector 测试程序")
