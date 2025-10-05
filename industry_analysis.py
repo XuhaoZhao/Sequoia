@@ -249,7 +249,8 @@ class IndustryDataCollector:
             target_data['volume'] += volume
             target_data['amount'] += amount
             target_data['data_points'] += 1
-        
+        print("hello3")
+
         return current_time
     
     def save_realtime_data_to_disk(self):
@@ -318,7 +319,7 @@ class IndustryDataCollector:
             return
         
         current_date_str = datetime.now().strftime('%Y-%m-%d')
-        
+        print("hello1")
         # 如果日期变了，先保存昨天的数据，然后清空内存
         if current_date_str != self.current_date:
             print(f"日期变更：{self.current_date} -> {current_date_str}")
@@ -328,6 +329,8 @@ class IndustryDataCollector:
         
         realtime_df = self.get_realtime_data()
         if realtime_df is not None:
+            print("hello2")
+
             current_time = self.aggregate_to_5min(realtime_df)
             
             # 每个整5分钟时刻保存一次数据到磁盘
