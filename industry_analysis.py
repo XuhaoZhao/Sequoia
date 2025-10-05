@@ -502,9 +502,10 @@ class IndustryAnalyzer:
                         print(f"    {signal['time']} - {signal['type']}: MACD={signal['macd']:.4f}, Signal={signal['signal']:.4f}")
                         # 推送保险板块60分钟金叉信号
                         if period == "60分钟" and signal['type'] == "金叉":
+                            print("hello")
                             message = f"保险板块60分钟MACD金叉信号\n时间: {signal['time']}\nMACD: {signal['macd']:.4f}\nSignal:{signal['signal']:.4f}"
                             push.strategy(message)
-                            print("hello")
+                            
         
     def analyze_all_boards(self):
         """分析所有板块的MACD"""
