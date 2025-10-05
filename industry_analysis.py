@@ -67,9 +67,9 @@ class IndustryDataCollector:
         # 获取时间部分
         current_time = check_time.time()
         
-        # 检查是否为工作日（周一到周五）
-        if check_time.weekday() >= 5:  # 周六=5, 周日=6
-            return False
+        # # 检查是否为工作日（周一到周五）
+        # if check_time.weekday() >= 5:  # 周六=5, 周日=6
+        #     return False
         
         # 上午交易时间：9:30-11:30
         morning_start = datetime.strptime("09:30", "%H:%M").time()
@@ -317,7 +317,6 @@ class IndustryDataCollector:
         """每分钟收集实时数据并保存到磁盘"""
         # 检查是否在交易时间内
         if not self._is_trading_time():
-            print("hello5")
             return
         
         current_date_str = datetime.now().strftime('%Y-%m-%d')
