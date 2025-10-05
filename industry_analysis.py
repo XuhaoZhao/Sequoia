@@ -58,6 +58,29 @@ class IndustryDataCollector:
         
         return timestamps
     
+    def _is_trading_time(self, check_time=None):
+        """检查是否在A股交易时间内"""
+        if check_time is None:
+            check_time = datetime.now()
+        
+        # 获取时间部分
+        current_time = check_time.time()
+        
+        # 检查是否为工作日（周一到周五）
+        if check_time.weekday() >= 5:  # 周六=5, 周日=6
+            return False
+        
+        # 上午交易时间：9:30-11:30
+        morning_start = datetime.strptime("09:30", "%H:%M").time()
+        morning_end = datetime.strptime("11:30", "%H:%M").time()
+        
+        # 下午交易时间：13:00-15:00
+        afternoon_start = datetime.strptime("13:00", "%H:%M").time()
+        afternoon_end = datetime.strptime("15:00", "%H:%M").time()
+        
+        return (morning_start <= current_time <= morning_end) or \
+               (afternoon_start <= current_time <= afternoon_end)
+    
     def _find_target_timestamp(self, data_time):
         """根据数据时间找到对应的目标时间戳（5分钟周期）"""
         date = data_time.date()
@@ -290,6 +313,10 @@ class IndustryDataCollector:
     
     def collect_realtime_data(self):
         """每分钟收集实时数据并保存到磁盘"""
+        # 检查是否在交易时间内
+        if not self._is_trading_time():
+            return
+        
         current_date_str = datetime.now().strftime('%Y-%m-%d')
         
         # 如果日期变了，先保存昨天的数据，然后清空内存
@@ -358,13 +385,14 @@ class IndustryDataCollector:
         """启动数据收集监控系统"""
         # 定时任务
         schedule.every().day.at("08:00").do(self.collect_all_historical_data)
+        # 只在交易时间内每分钟执行实时数据收集
         schedule.every().minute.do(self.collect_realtime_data)
-        # 每15分钟强制保存一次实时数据
+        # 每15分钟强制保存一次实时数据（仅在交易时间内有效果）
         schedule.every(15).minutes.do(self.save_realtime_data_to_disk)
         
         print("数据收集系统已启动...")
         print("- 每天8:00获取历史数据")
-        print("- 每分钟获取实时数据")
+        print("- 交易时间内每分钟获取实时数据（9:30-11:30, 13:00-15:00）")
         print("- 每15分钟保存实时数据到磁盘")
         print("- 程序停止时会自动保存当前实时数据")
         
