@@ -10,6 +10,7 @@ def push(msg):
         response = WxPusher.send_message(msg, uids=[settings.config['push']['wxpusher_uid']],
                                          token=settings.config['push']['wxpusher_token'])
         print(response)
+        print("jushsu")
     logging.info(msg)
 
 
