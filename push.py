@@ -7,8 +7,8 @@ from wxpusher import WxPusher
 
 def push(msg):
     if settings.config['push']['enable']:
-        response = WxPusher.send_message(msg, uids=[settings.config['push']['wxpusher_uid']],
-                                         token=settings.config['push']['wxpusher_token'])
+        response = WxPusher.send_message(msg, uids="UID_kVnwJ9qtNjtHQE62c575olKwi1LL",
+                                         token="AT_Yx4jtKrc2UqVwQ7a5yidYeTP36oZaMML")
         print(response)
         print("jushsu")
     logging.info(msg)
