@@ -60,6 +60,7 @@ class IndustryDataCollector:
     
     def _is_trading_time(self, check_time=None):
         """检查是否在A股交易时间内"""
+        print("hello4")
         if check_time is None:
             check_time = datetime.now()
         
