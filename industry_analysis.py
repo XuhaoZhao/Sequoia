@@ -549,6 +549,76 @@ class IndustryAnalyzer:
             except Exception as e:
                 print(f"分析{board}失败: {e}")
     
+    def is_price_at_monthly_high_drawdown_5pct(self, board_name, current_price=None):
+        """
+        计算给定股票当前价格是否是当前时间向前推一个月的最高点回撤5%
+        
+        Args:
+            board_name: 板块名称
+            current_price: 当前价格，如果为None则使用最新的收盘价
+            
+        Returns:
+            dict: {
+                'is_at_drawdown_5pct': bool,  # 是否在5%回撤位置
+                'current_price': float,        # 当前价格
+                'monthly_high': float,         # 一个月内最高价
+                'drawdown_5pct_price': float,  # 5%回撤价格
+                'actual_drawdown_pct': float,  # 实际回撤百分比
+                'days_from_high': int          # 距离最高点的天数
+            }
+        """
+        # 获取板块数据
+        data = self.data_collector.combine_historical_and_realtime(board_name)
+        
+        if data is None or data.empty:
+            print(f"{board_name}: 无法获取数据")
+            return None
+        
+        # 计算一个月前的日期
+        current_time = datetime.now()
+        one_month_ago = current_time - timedelta(days=30)
+        
+        # 过滤出一个月内的数据
+        data['日期时间'] = pd.to_datetime(data['日期时间'])
+        monthly_data = data[data['日期时间'] >= one_month_ago].copy()
+        
+        if monthly_data.empty:
+            print(f"{board_name}: 一个月内没有数据")
+            return None
+        
+        # 获取当前价格
+        if current_price is None:
+            current_price = monthly_data['收盘'].iloc[-1]
+        
+        # 找到一个月内的最高价和对应的日期
+        monthly_high = monthly_data['最高'].max()
+        high_date_idx = monthly_data['最高'].idxmax()
+        high_date = monthly_data.loc[high_date_idx, '日期时间']
+        
+        # 计算5%回撤价格
+        drawdown_5pct_price = monthly_high * 0.95
+        
+        # 计算实际回撤百分比
+        actual_drawdown_pct = ((monthly_high - current_price) / monthly_high) * 100
+        
+        # 计算距离最高点的天数
+        days_from_high = (current_time - high_date).days
+        
+        # 判断是否在5%回撤位置（允许一定误差范围，比如±1%）
+        is_at_drawdown_5pct = abs(actual_drawdown_pct - 5.0) <= 1.0 and actual_drawdown_pct >= 4.0
+        
+        result = {
+            'is_at_drawdown_5pct': is_at_drawdown_5pct,
+            'current_price': current_price,
+            'monthly_high': monthly_high,
+            'drawdown_5pct_price': drawdown_5pct_price,
+            'actual_drawdown_pct': actual_drawdown_pct,
+            'days_from_high': days_from_high,
+            'high_date': high_date
+        }
+        
+        return result
+
     def run_analysis(self):
         """运行分析（手动触发）"""
         print("开始分析所有板块...")
