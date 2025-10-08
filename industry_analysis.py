@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 import threading
 import numpy as np
 import push
+import settings
 
 class IndustryDataCollector:
     """数据收集器，负责历史数据和实时数据的获取和保存"""
@@ -529,15 +530,11 @@ class IndustryAnalyzer:
             print(f"\n{board_name} MACD信号:")
             for period, signals in results.items():
                 print(f"  {period}:")
-                if board_name == "保险":
-                    for signal in signals: 
-                        print(f"    {signal['time']} - {signal['type']}: MACD={signal['macd']:.4f}, Signal={signal['signal']:.4f}")
-                        # 推送保险板块60分钟金叉信号
-                        if period == "60分钟" and signal['type'] == "金叉":
-                            print("hello")
-                            message = f"保险板块60分钟MACD金叉信号\n时间: {signal['time']}\nMACD: {signal['macd']:.4f}\nSignal:{signal['signal']:.4f}"
-                            push.strategy(message)
-                            
+                for signal in signals: 
+                    print(f"    {signal['time']} - {signal['type']}: MACD={signal['macd']:.4f}, Signal={signal['signal']:.4f}")
+                    message = f"保险板块60分钟MACD金叉信号\n时间: {signal['time']}\nMACD: {signal['macd']:.4f}\nSignal:{signal['signal']:.4f}"
+                    push.strategy(message)
+                        
         
     def analyze_all_boards(self):
         """分析所有板块的MACD"""
@@ -622,6 +619,7 @@ class IndustryAnalyzer:
     def run_analysis(self):
         """运行分析（手动触发）"""
         print("开始分析所有板块...")
+        settings.init()
         self.analyze_all_boards()
 
 

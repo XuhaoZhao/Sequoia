@@ -6,9 +6,9 @@ from wxpusher import WxPusher
 
 
 def push(msg):
-    if settings.config['push']['enable']:
-        response = WxPusher.send_message(msg, uids=[settings.config['push']['wxpusher_uid']],
-                                         token=settings.config['push']['wxpusher_token'])
+    if settings.get_config()['push']['enable']:
+        response = WxPusher.send_message(msg, uids=[settings.get_config()['push']['wxpusher_uid']],
+                                         token=settings.get_config()['push']['wxpusher_token'])
         print(response)
     logging.info(msg)
 

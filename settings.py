@@ -17,5 +17,5 @@ def init():
     top_list = df['代码'].tolist()
 
 
-def config():
+def get_config():
     return config

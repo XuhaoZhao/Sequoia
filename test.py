@@ -12,6 +12,8 @@ import json
 from datetime import datetime
 import threading
 import numpy as np
+import push as push
+import settings
 
 
 # hh = ak.index_csindex_all()
@@ -33,5 +35,7 @@ import numpy as np
 
 
 
-index_zh_a_hist_min_em_df = ak.index_zh_a_hist_min_em(symbol="H30590", period="1", start_date="2024-12-11 09:30:00", end_date="2025-12-11 19:00:00")
-print(index_zh_a_hist_min_em_df)
+# index_zh_a_hist_min_em_df = ak.index_zh_a_hist_min_em(symbol="H30590", period="1", start_date="2024-12-11 09:30:00", end_date="2025-12-11 19:00:00")
+# print(index_zh_a_hist_min_em_df)
+settings.init()
+push.push("哈哈哈")
