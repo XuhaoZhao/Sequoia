@@ -37,11 +37,11 @@ class IndustryDataCollector:
         #     return False
         
         # 上午交易时间：9:30-11:30
-        morning_start = datetime.strptime("09:30", "%H:%M").time()
+        morning_start = datetime.strptime("09:25", "%H:%M").time()
         morning_end = datetime.strptime("11:30", "%H:%M").time()
         
         # 下午交易时间：13:00-15:00
-        afternoon_start = datetime.strptime("13:00", "%H:%M").time()
+        afternoon_start = datetime.strptime("12:59", "%H:%M").time()
         afternoon_end = datetime.strptime("15:00", "%H:%M").time()
         
         return (morning_start <= current_time <= morning_end) or \
@@ -162,7 +162,6 @@ class IndustryDataCollector:
         current_time = datetime.now()
         
         realtime_df = self.get_realtime_data()
-        print("heudjue")
         if realtime_df is not None:
             # 保存1分钟级别的实时数据到数据库
             try:
@@ -187,7 +186,6 @@ class IndustryDataCollector:
                     
                 # 插入1分钟数据到数据库
                 if db_records_1m:
-                    print("heuddcde")
                     inserted_count = self.db.insert_kline_data('1m', db_records_1m)
                     print(f"已保存{len(db_records_1m)}个板块的1分钟数据到数据库，共{inserted_count}条记录")
                 
@@ -486,7 +484,7 @@ class IndustryAnalyzer:
                         for signal in today_signals: 
                             message = f"{board_name} {period}MACD{signal['type']}信号\n时间: {signal['time']}\nMACD: {signal['macd']:.4f}\nSignal: {signal['signal']:.4f}"
                             print(message)
-                            push.strategy(message)
+                            # push.strategy(message)
                         
         
     def analyze_all_boards(self):

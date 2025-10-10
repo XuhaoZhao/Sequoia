@@ -13,7 +13,7 @@ def get_intraday(symbol="000333"):
     df.rename(columns={"时间": "time", "成交价": "price", "手数": "volume"}, inplace=True)
     df['time'] = pd.to_datetime(df['time'], errors="coerce")
     df = df.dropna(subset=['time'])
-    df.set_index('time', inplace=True)
+    df.set_index('time', inplace=True) 
     return df
 
 def resample_and_macd(df, rule):
