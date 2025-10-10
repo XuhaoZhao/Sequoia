@@ -14,11 +14,12 @@ import threading
 import numpy as np
 import push as push
 import settings
+from financial_framework.index import Index
 
 
 # hh = ak.index_csindex_all()
 
-# print(hh["指数代码"])
+# print(hh)
 
 # # 方法1: 使用 isin() 检查单个或多个代码
 # target_code = "930721"  # 要查找的代码
@@ -40,6 +41,12 @@ import settings
 # settings.init()
 # push.push("哈哈哈")
 
-boards_df = ak.stock_board_industry_name_em()
+# boards_df = ak.stock_board_industry_name_em()
 
-print('2025-10-01' > '2025-10')
+# print('2025-10-01' > '2025-10')
+
+# indexc = Index()
+# print(indexc.get_realtime_1min_data())
+
+index_zh_a_hist_min_em_df = ak.index_zh_a_hist_min_em(symbol="BK0125", period="5", start_date="2025-09-11 09:30:00", end_date="2025-12-11 19:00:00")
+print(index_zh_a_hist_min_em_df)
