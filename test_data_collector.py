@@ -21,13 +21,15 @@ def test_basic_functions():
     boards = collector.get_all_boards()
     print(f"获取到 {len(boards)} 个板块")
     if boards:
-        print(f"前5个板块: {boards[:5]}")
+        print(f"前5个板块: {[f\"{b['板块名称']}({b['板块代码']})\" for b in boards[:5]]}")
     
     # 测试获取单个板块历史数据
     if boards:
-        test_board = boards[0]
-        print(f"\n2. 测试获取 {test_board} 的历史数据...")
-        hist_data = collector.get_historical_data(test_board)
+        test_board_info = boards[0]
+        test_board_name = test_board_info['板块名称']
+        test_board_code = test_board_info['板块代码']
+        print(f"\n2. 测试获取 {test_board_name}({test_board_code}) 的历史数据...")
+        hist_data = collector.get_historical_data(test_board_name)
         if hist_data is not None:
             print(f"获取到 {len(hist_data)} 条历史数据")
             print("最新5条数据:")
@@ -115,14 +117,16 @@ def test_data_combination():
     # 选择一个板块进行测试
     boards = collector.get_all_boards()
     if boards:
-        test_board = boards[0]
-        print(f"测试板块: {test_board}")
+        test_board_info = boards[0]
+        test_board_name = test_board_info['板块名称']
+        test_board_code = test_board_info['板块代码']
+        print(f"测试板块: {test_board_name}({test_board_code})")
         
         # 先获取历史数据并保存
         print("1. 获取并保存历史数据...")
-        hist_data = collector.get_historical_data(test_board)
+        hist_data = collector.get_historical_data(test_board_name)
         if hist_data is not None:
-            collector.save_historical_data(test_board, hist_data)
+            collector.save_historical_data(test_board_name, hist_data)
             print(f"保存了 {len(hist_data)} 条历史数据")
         
         # 获取实时数据
@@ -134,7 +138,7 @@ def test_data_combination():
         
         # 测试合并数据
         print("3. 测试合并历史和实时数据...")
-        combined_data = collector.combine_historical_and_realtime(test_board)
+        combined_data = collector.combine_historical_and_realtime(test_board_name)
         if combined_data is not None:
             print(f"合并后共有 {len(combined_data)} 条数据")
             print("最新5条数据:")

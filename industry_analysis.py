@@ -14,50 +14,14 @@ import threading
 import numpy as np
 import push
 import settings
+from db_manager import IndustryDataDB
 
 class IndustryDataCollector:
     """数据收集器，负责历史数据和实时数据的获取和保存"""
     def __init__(self):
-        self.data_dir = "industry_data"
-        self.realtime_dir = os.path.join(self.data_dir, "realtime")
-        self.historical_dir = os.path.join(self.data_dir, "historical")
-        
-        for dir_path in [self.data_dir, self.realtime_dir, self.historical_dir]:
-            if not os.path.exists(dir_path):
-                os.makedirs(dir_path)
-        
-        self.realtime_data = {}
-        self.current_date = datetime.now().strftime('%Y-%m-%d')
-        
-        # 初始化A股交易时间的5分钟时间戳
-        self.trading_timestamps = self._generate_trading_timestamps()
+        # 初始化SQLite数据库
+        self.db = IndustryDataDB("industry_data.db")
     
-    def _generate_trading_timestamps(self, date=None):
-        """生成A股交易时间的5分钟时间戳序列"""
-        if date is None:
-            date = datetime.now().date()
-        elif isinstance(date, str):
-            date = datetime.strptime(date, '%Y-%m-%d').date()
-        
-        timestamps = []
-        
-        # 上午交易时间：9:30-11:30
-        current_time = datetime.combine(date, datetime.strptime("09:30", "%H:%M").time())
-        end_morning = datetime.combine(date, datetime.strptime("11:30", "%H:%M").time())
-        
-        while current_time <= end_morning:
-            timestamps.append(current_time)
-            current_time += timedelta(minutes=5)
-        
-        # 下午交易时间：13:00-15:00
-        current_time = datetime.combine(date, datetime.strptime("13:00", "%H:%M").time())
-        end_afternoon = datetime.combine(date, datetime.strptime("15:00", "%H:%M").time())
-        
-        while current_time <= end_afternoon:
-            timestamps.append(current_time)
-            current_time += timedelta(minutes=5)
-        
-        return timestamps
     
     def _is_trading_time(self, check_time=None):
         """检查是否在A股交易时间内"""
@@ -83,38 +47,13 @@ class IndustryDataCollector:
         return (morning_start <= current_time <= morning_end) or \
                (afternoon_start <= current_time <= afternoon_end)
     
-    def _find_target_timestamp(self, data_time):
-        """根据数据时间找到对应的目标时间戳（5分钟周期）"""
-        date = data_time.date()
-        
-        # 如果日期变了，重新生成当天的时间戳
-        if not hasattr(self, '_cached_date') or self._cached_date != date:
-            self.trading_timestamps = self._generate_trading_timestamps(date)
-            self._cached_date = date
-        
-        # 找到数据应该归属的5分钟时间戳
-        for i, timestamp in enumerate(self.trading_timestamps):
-            # 如果是第一个时间戳，从开盘开始的数据都归到第一个时间戳
-            if i == 0 and data_time <= timestamp:
-                return timestamp
-            
-            # 如果不是第一个时间戳，找到前一个和当前时间戳之间的范围
-            if i > 0:
-                prev_timestamp = self.trading_timestamps[i-1]
-                if prev_timestamp < data_time <= timestamp:
-                    return timestamp
-        
-        # 如果数据时间超过了最后一个时间戳，归到最后一个时间戳
-        if self.trading_timestamps and data_time > self.trading_timestamps[-1]:
-            return self.trading_timestamps[-1]
-        
-        return None
     
     def get_all_boards(self):
-        """获取所有板块名称"""
+        """获取所有板块名称和代码"""
         try:
             boards_df = ak.stock_board_industry_name_em()
-            return boards_df['板块名称'].tolist()
+            # 返回包含板块名称和代码的列表，每个元素是一个字典
+            return boards_df[['板块名称', '板块代码']].to_dict('records')
         except Exception as e:
             print(f"获取板块列表失败: {e}")
             return []
@@ -129,11 +68,34 @@ class IndustryDataCollector:
             print(f"获取{board_name}历史数据失败: {e}")
             return None
     
-    def save_historical_data(self, board_name, data, period="5"):
-        """保存历史数据到文件"""
-        filename = os.path.join(self.historical_dir, f"{board_name}_{period}min_historical.csv")
-        data.to_csv(filename, index=False, encoding='utf-8')
-        print(f"已保存{board_name}历史数据到{filename}")
+    def save_historical_data(self, board_info, data, period="5"):
+        """保存历史数据到数据库"""
+        # 保存到SQLite数据库（避免重复数据）
+        try:
+            board_name = board_info['板块名称'] 
+            data_records = []
+            for _, row in data.iterrows():
+                data_records.append({
+                    'code': str(board_info['板块代码']),
+                    'name': board_info['板块名称'],
+                    'datetime': str(row['日期时间']),
+                    'open': float(row['开盘']),
+                    'high': float(row['最高']),
+                    'low': float(row['最低']),
+                    'close': float(row['收盘']),
+                    'volume': int(row.get('成交量', 0)),
+                    'amount': float(row.get('成交额', 0))
+                })
+            
+            # 添加股票信息
+            self.db.add_or_update_stock_info(board_name, board_name, "板块", "行业板块")
+            
+            # 插入数据（使用INSERT OR REPLACE避免重复）
+            inserted_count = self.db.insert_kline_data('5m', data_records)
+            print(f"已保存{board_name}历史数据到数据库，共{inserted_count}条记录")
+            
+        except Exception as e:
+            print(f"保存{board_name}历史数据到数据库失败: {e}")
     
     def load_historical_data(self, board_name, period="5"):
         """从文件加载历史数据"""
@@ -156,27 +118,25 @@ class IndustryDataCollector:
     
     def collect_all_historical_data(self, delay_seconds=None):
         """每天早晨8点定时获取所有板块的历史数据"""
-        print(f"开始获取所有板块历史数据 - {datetime.now()}")
-        
-        # 先清理历史数据文件夹
-        self.clean_historical_data_dir()
-        
+        print(f"开始获取所有板块历史数据 - {datetime.now()}")    
         boards = self.get_all_boards()
         total_boards = len(boards)
         
-        # 如果没有指定延迟时间，按照1小时完成所有板块来计算平均延迟
+        # 如果没有指定延迟时间，按照2小时完成所有板块来计算平均延迟
         if delay_seconds is None:
-            delay_seconds = 3600 / total_boards if total_boards > 0 else 1
+            delay_seconds = 7200 / total_boards if total_boards > 0 else 1
             print(f"未指定延迟时间，按1小时完成{total_boards}个板块计算，每个板块延迟{delay_seconds:.2f}秒")
         else:
             estimated_total_time = delay_seconds * total_boards
             print(f"使用指定延迟时间{delay_seconds}秒，预计总耗时{estimated_total_time/60:.1f}分钟")
-        
-        for i, board in enumerate(boards, 1):
-            print(f"正在获取{board}的历史数据... ({i}/{total_boards})")
-            hist_data = self.get_historical_data(board, "5")
+        boards = list(reversed(boards))  # 倒序排列
+        for i, board_info in enumerate(boards, 1):
+            board_name = board_info['板块名称']
+            board_code = board_info['板块代码']
+            print(f"正在获取{board_name}({board_code})的历史数据... ({i}/{total_boards})")
+            hist_data = self.get_historical_data(board_name, "5")
             if hist_data is not None:
-                self.save_historical_data(board, hist_data, "5")
+                self.save_historical_data(board_info, hist_data, "5")
             
             # 最后一个板块不需要延迟
             if i < total_boards:
@@ -193,198 +153,186 @@ class IndustryDataCollector:
             print(f"获取实时数据失败: {e}")
             return None
     
-    def aggregate_to_5min(self, realtime_df):
-        """将实时数据聚合成5分钟数据，使用预定义的交易时间戳"""
-        current_time = datetime.now()
-        current_date = current_time.date()
-        
-        # 确保我们有当天的时间戳
-        if not hasattr(self, '_cached_date') or self._cached_date != current_date:
-            self.trading_timestamps = self._generate_trading_timestamps(current_date)
-            self._cached_date = current_date
-        
-        for _, row in realtime_df.iterrows():
-            board_name = row['板块名称']
-            price = row['最新价']
-            volume = row.get('成交量', 0)
-            amount = row.get('成交额', 0)
-            
-            # 找到当前数据应该归属的5分钟时间戳
-            target_timestamp = self._find_target_timestamp(current_time)
-            if target_timestamp is None:
-                continue  # 不在交易时间内
-            
-            # 如果该板块还没有数据，初始化所有时间戳的数据结构
-            if board_name not in self.realtime_data:
-                self.realtime_data[board_name] = {}
-                
-                # 为所有交易时间戳初始化数据结构
-                for ts in self.trading_timestamps:
-                    self.realtime_data[board_name][ts] = {
-                        'timestamp': ts,
-                        'open': None,
-                        'high': None,
-                        'low': None,
-                        'close': None,
-                        'volume': 0,
-                        'amount': 0,
-                        'data_points': 0  # 记录该时间段内收到的数据点数量
-                    }
-            
-            # 获取目标时间戳的数据
-            target_data = self.realtime_data[board_name][target_timestamp]
-            
-            # 更新该时间戳的数据
-            if target_data['open'] is None:
-                # 第一次收到该时间段的数据
-                target_data['open'] = price
-                target_data['high'] = price
-                target_data['low'] = price
-                target_data['close'] = price
-            else:
-                # 更新高低价
-                target_data['high'] = max(target_data['high'], price)
-                target_data['low'] = min(target_data['low'], price)
-                target_data['close'] = price  # 收盘价始终是最新价
-            
-            # 累计成交量和成交额
-            target_data['volume'] += volume
-            target_data['amount'] += amount
-            target_data['data_points'] += 1
-        print("hello3")
-
-        return current_time
-    
-    def save_realtime_data_to_disk(self):
-        """将内存中的实时数据保存到磁盘"""
-        if not self.realtime_data:
-            return
-        
-        for board_name, timestamp_data in self.realtime_data.items():
-            if not timestamp_data:
-                continue
-            
-            # 按日期保存实时数据
-            filename = os.path.join(self.realtime_dir, f"{board_name}_{self.current_date}_realtime.csv")
-            
-            # 转换为DataFrame格式，只保存有数据的时间戳
-            rows = []
-            for timestamp, data in timestamp_data.items():
-                # 只保存有实际数据的时间戳（至少收到过一次数据）
-                if data['open'] is not None and data['data_points'] > 0:
-                    rows.append({
-                        '日期时间': timestamp,
-                        '开盘': data['open'],
-                        '收盘': data['close'],
-                        '最高': data['high'],
-                        '最低': data['low'],
-                        '成交量': data['volume'],
-                        '成交额': data['amount']
-                    })
-            
-            if rows:
-                df = pd.DataFrame(rows)
-                # 按时间排序
-                df = df.sort_values('日期时间')
-                
-                # 如果文件已存在，追加数据（去重）
-                if os.path.exists(filename):
-                    existing_df = pd.read_csv(filename, encoding='utf-8')
-                    existing_df['日期时间'] = pd.to_datetime(existing_df['日期时间'])
-                    df['日期时间'] = pd.to_datetime(df['日期时间'])
-                    
-                    # 合并并去重
-                    combined_df = pd.concat([existing_df, df], ignore_index=True)
-                    combined_df = combined_df.drop_duplicates(subset=['日期时间']).sort_values('日期时间')
-                    combined_df.to_csv(filename, index=False, encoding='utf-8')
-                else:
-                    df.to_csv(filename, index=False, encoding='utf-8')
-                
-                print(f"已保存{board_name}实时数据到{filename}，共{len(rows)}个时间点")
-    
-    def load_realtime_data_from_disk(self, board_name, date=None):
-        """从磁盘加载实时数据"""
-        if date is None:
-            date = self.current_date
-        
-        filename = os.path.join(self.realtime_dir, f"{board_name}_{date}_realtime.csv")
-        if os.path.exists(filename):
-            data = pd.read_csv(filename, encoding='utf-8')
-            data['日期时间'] = pd.to_datetime(data['日期时间'])
-            return data
-        return None
-    
     def collect_realtime_data(self):
-        """每分钟收集实时数据并保存到磁盘"""
+        """每分钟收集实时数据并保存到数据库"""
         # 检查是否在交易时间内
         if not self._is_trading_time():
             return
         
-        current_date_str = datetime.now().strftime('%Y-%m-%d')
-        print("hello1")
-        # 如果日期变了，先保存昨天的数据，然后清空内存
-        if current_date_str != self.current_date:
-            print(f"日期变更：{self.current_date} -> {current_date_str}")
-            self.save_realtime_data_to_disk()
-            self.realtime_data = {}
-            self.current_date = current_date_str
+        current_time = datetime.now()
         
         realtime_df = self.get_realtime_data()
+        print("heudjue")
         if realtime_df is not None:
-            print("hello2")
-
-            current_time = self.aggregate_to_5min(realtime_df)
-            
-            # 每个整5分钟时刻保存一次数据到磁盘
-            # 检查当前时间是否是整5分钟（例如9:30, 9:35, 9:40等）
-            if current_time.minute % 5 == 0 and current_time.second < 10:
-                self.save_realtime_data_to_disk()
+            # 保存1分钟级别的实时数据到数据库
+            try:
+                print("heuddc")
+                db_records_1m = []
+                for _, row in realtime_df.iterrows():
+                    board_name = row['板块名称']
+                    board_code = row['板块代码']
+                    
+                    # 准备1分钟数据记录
+                    db_records_1m.append({
+                        'code': board_code,
+                        'name': board_name,
+                        'datetime': current_time.strftime('%Y-%m-%d %H:%M:00'),  # 取整到分钟
+                        'open': float(row['最新价']),
+                        'high': float(row['最新价']),
+                        'low': float(row['最新价']),
+                        'close': float(row['最新价']),
+                        'volume': int(row.get('成交量', 0)),
+                        'amount': float(row.get('成交额', 0))
+                    })
+                    
+                # 插入1分钟数据到数据库
+                if db_records_1m:
+                    print("heuddcde")
+                    inserted_count = self.db.insert_kline_data('1m', db_records_1m)
+                    print(f"已保存{len(db_records_1m)}个板块的1分钟数据到数据库，共{inserted_count}条记录")
+                
+            except Exception as e:
+                print(f"保存1分钟数据到数据库失败: {e}")
             
             print(f"实时数据已更新 - {datetime.now()}")
     
-    def combine_historical_and_realtime(self, board_name):
-        """合并历史数据和实时数据"""
-        hist_data = self.load_historical_data(board_name)
+    def _aggregate_1m_to_5m(self, df_1m):
+        """将1分钟数据聚合为5分钟数据，只基于已有数据的时间范围"""
+        if df_1m.empty:
+            return pd.DataFrame()
         
-        if hist_data is None:
-            return None
+        # 确保时间列是datetime类型
+        df_1m['datetime'] = pd.to_datetime(df_1m['datetime'])
+        df_1m = df_1m.sort_values('datetime')
         
-        # 加载今天的实时数据（从磁盘）
-        today_realtime = self.load_realtime_data_from_disk(board_name)
+        # 获取数据的实际时间范围
+        min_time = df_1m['datetime'].min()
+        max_time = df_1m['datetime'].max()
+        start_date = min_time.date()
         
-        # 加载内存中的实时数据
-        memory_realtime_rows = []
-        if board_name in self.realtime_data and self.realtime_data[board_name]:
-            for timestamp, data in self.realtime_data[board_name].items():
-                # 只包含有实际数据的时间戳
-                if data['open'] is not None and data['data_points'] > 0:
-                    memory_realtime_rows.append({
-                        '日期时间': timestamp,
-                        '开盘': data['open'],
-                        '收盘': data['close'],
-                        '最高': data['high'],
-                        '最低': data['low'],
-                        '成交量': data['volume'],
-                        '成交额': data['amount']
-                    })
+        # 定义5分钟边界时间点（从9:30开始）
+        base_times = []
         
-        # 合并所有数据
-        all_data = [hist_data]
+        # 上午时段：9:30开始每5分钟一个点
+        morning_start = pd.Timestamp.combine(start_date, pd.Timestamp('09:30:00').time())
+        current = morning_start
+        while current <= pd.Timestamp.combine(start_date, pd.Timestamp('11:30:00').time()):
+            base_times.append(current)
+            current += pd.Timedelta(minutes=5)
         
-        if today_realtime is not None:
-            all_data.append(today_realtime)
+        # 下午时段：13:00开始每5分钟一个点
+        afternoon_start = pd.Timestamp.combine(start_date, pd.Timestamp('13:00:00').time())
+        current = afternoon_start
+        while current <= pd.Timestamp.combine(start_date, pd.Timestamp('15:00:00').time()):
+            base_times.append(current)
+            current += pd.Timedelta(minutes=5)
         
-        if memory_realtime_rows:
-            memory_realtime_df = pd.DataFrame(memory_realtime_rows)
-            all_data.append(memory_realtime_df)
+        # 只保留在数据时间范围内的5分钟边界点
+        valid_times = [t for t in base_times if min_time <= t <= max_time]
+
+        print(valid_times)
         
-        if len(all_data) == 1:
-            return hist_data
+        # 为每个有效的5分钟时间点聚合数据
+        aggregated_data = []
         
-        combined = pd.concat(all_data, ignore_index=True)
-        combined = combined.drop_duplicates(subset=['日期时间']).sort_values('日期时间').reset_index(drop=True)
-        
-        return combined
+        for i, target_time in enumerate(valid_times):
+            # 确定这个5分钟区间的开始时间
+            if i == 0:
+                # 第一个区间：从数据开始时间到第一个5分钟边界
+                start_time = min_time
+            else:
+                # 其他区间：从上一个5分钟边界的下一分钟开始
+                start_time = valid_times[i-1] + pd.Timedelta(minutes=1)
+            
+            # 获取这个时间区间的数据
+            mask = (df_1m['datetime'] >= start_time) & (df_1m['datetime'] <= target_time)
+            period_data = df_1m[mask]
+            
+            if not period_data.empty:
+                # 聚合OHLCV数据
+                open_price = period_data['open_price'].iloc[0]  # 第一条记录的开盘价
+                high_price = period_data['high_price'].max()    # 最高价
+                low_price = period_data['low_price'].min()      # 最低价
+                close_price = period_data['close_price'].iloc[-1]  # 最后一条记录的收盘价
+                volume = period_data['volume'].sum()            # 成交量求和
+                amount = period_data['amount'].sum()            # 成交额求和
+                
+                aggregated_data.append({
+                    'datetime': target_time,
+                    'open_price': open_price,
+                    'high_price': high_price,
+                    'low_price': low_price,
+                    'close_price': close_price,
+                    'volume': volume,
+                    'amount': amount,
+                    'code': period_data['code'].iloc[0],
+                    'name': period_data['name'].iloc[0]
+                })
+        return pd.DataFrame(aggregated_data)
+    
+    def combine_historical_and_realtime(self, board_info):
+        """从数据库获取并合并历史和实时数据，返回5分钟K线数据"""
+        board_code = board_info['板块代码']
+        board_name = board_info['板块名称']
+        try:
+            # 第一步：获取当天1分钟数据并聚合为5分钟
+            today = datetime.now().strftime('%Y-%m-%d')
+            df_1m_today = self.db.query_kline_data('1m', code=board_code, start_date=today, end_date=today)
+            
+            today_5m_data = pd.DataFrame()
+            if not df_1m_today.empty:
+                today_5m_data = self._aggregate_1m_to_5m(df_1m_today)
+            
+            # 第二步：获取历史5分钟数据（排除今天）
+            yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+            df_5m_hist = self.db.query_kline_data('5m', code=board_code, end_date=yesterday)
+            
+            # 第三步：合并所有数据
+            all_data = []
+            
+            if not df_5m_hist.empty:
+                # 重命名列以匹配原有格式
+                df_5m_hist_renamed = df_5m_hist.rename(columns={
+                    'datetime': '日期时间',
+                    'open_price': '开盘',
+                    'high_price': '最高',
+                    'low_price': '最低',
+                    'close_price': '收盘',
+                    'volume': '成交量',
+                    'amount': '成交额'
+                })
+                all_data.append(df_5m_hist_renamed)
+            
+            if not today_5m_data.empty:
+                # 重命名列以匹配原有格式
+                today_5m_renamed = today_5m_data.rename(columns={
+                    'datetime': '日期时间',
+                    'open_price': '开盘',
+                    'high_price': '最高',
+                    'low_price': '最低',
+                    'close_price': '收盘',
+                    'volume': '成交量',
+                    'amount': '成交额'
+                })
+                all_data.append(today_5m_renamed)
+            
+            if not all_data:
+                return None
+            
+            # 合并并排序
+            combined = pd.concat(all_data, ignore_index=True)
+            combined['日期时间'] = pd.to_datetime(combined['日期时间'])
+            combined = combined.sort_values('日期时间').reset_index(drop=True)
+            
+            # 去重（保留最后一条记录）
+            combined = combined.drop_duplicates(subset=['日期时间'], keep='last')
+            
+            return combined
+            
+        except Exception as e:
+            print(f"从数据库获取{board_name}数据失败: {e}")
+            # 回退到原有逻辑
+            return self._combine_historical_and_realtime_fallback(board_name)
     
     def start_monitoring(self):
         """启动数据收集监控系统"""
@@ -392,8 +340,6 @@ class IndustryDataCollector:
         schedule.every().day.at("08:00").do(self.collect_all_historical_data)
         # 只在交易时间内每分钟执行实时数据收集
         schedule.every().minute.do(self.collect_realtime_data)
-        # 每15分钟强制保存一次实时数据（仅在交易时间内有效果）
-        schedule.every(15).minutes.do(self.save_realtime_data_to_disk)
         
         print("数据收集系统已启动...")
         print("- 每天8:00获取历史数据")
@@ -406,14 +352,13 @@ class IndustryDataCollector:
                 schedule.run_pending()
                 time.sleep(1)
         except KeyboardInterrupt:
-            print("\n收到停止信号，正在保存数据...")
-            self.save_realtime_data_to_disk()
             print("数据已保存，程序退出")
 
 
 class IndustryAnalyzer:
     """数据分析器，负责技术指标分析"""
     def __init__(self, data_collector=None):
+        settings.init()
         if data_collector is None:
             self.data_collector = IndustryDataCollector()
         else:
@@ -484,9 +429,10 @@ class IndustryAnalyzer:
         
         return signals
     
-    def analyze_board_macd(self, board_name):
+    def analyze_board_macd(self, board_info):
         """分析单个板块的MACD"""
-        base_data = self.data_collector.combine_historical_and_realtime(board_name)
+        base_data = self.data_collector.combine_historical_and_realtime(board_info)
+        board_name = board_info['板块名称']
         
         if base_data is None or len(base_data) < 26:
             print(f"{board_name}: 数据不足，无法计算MACD")
@@ -527,24 +473,32 @@ class IndustryAnalyzer:
                         })
         
         if results:
-            print(f"\n{board_name} MACD信号:")
+            # 只打印当天的MACD金叉信号，且只打印30分钟和60分钟周期
+            from datetime import datetime
+            today = datetime.now().strftime('%Y-%m-%d')
+            
+            print(f"\n{board_name} 当天MACD金叉信号:")
             for period, signals in results.items():
-                print(f"  {period}:")
-                for signal in signals: 
-                    print(f"    {signal['time']} - {signal['type']}: MACD={signal['macd']:.4f}, Signal={signal['signal']:.4f}")
-                    message = f"保险板块60分钟MACD金叉信号\n时间: {signal['time']}\nMACD: {signal['macd']:.4f}\nSignal:{signal['signal']:.4f}"
-                    push.strategy(message)
+                if period in ['30分钟', '60分钟']:  # 只处理30分钟和60分钟周期
+                    today_signals = [s for s in signals if s['time'].strftime('%Y-%m-%d') == today and s['type'] == '金叉']  # 只处理金叉信号
+                    if today_signals:
+                        print(f"  {period}:")
+                        for signal in today_signals: 
+                            message = f"{board_name} {period}MACD{signal['type']}信号\n时间: {signal['time']}\nMACD: {signal['macd']:.4f}\nSignal: {signal['signal']:.4f}"
+                            print(message)
+                            push.strategy(message)
                         
         
     def analyze_all_boards(self):
         """分析所有板块的MACD"""
         boards = self.data_collector.get_all_boards()
         
-        for board in boards:
+        for board_info in boards:
+            board_name = board_info['板块名称']
             try:
-                self.analyze_board_macd(board)
+                self.analyze_board_macd(board_info)
             except Exception as e:
-                print(f"分析{board}失败: {e}")
+                print(f"分析{board_name}失败: {e}")
     
     def is_price_at_monthly_high_drawdown_5pct(self, board_name, current_price=None):
         """
@@ -715,107 +669,3 @@ class IndustryDataReader:
         if data is not None and len(data) > 0:
             return data.tail(periods)
         return None
-
-
-if __name__ == "__main__":
-    data_collector = IndustryDataCollector()
-    analyzer = IndustryAnalyzer(data_collector)
-    data_reader = IndustryDataReader()
-    
-    # 可以选择启动监控模式或手动分析模式
-    import sys
-    
-    if len(sys.argv) > 1 and sys.argv[1] == "monitor":
-        data_collector.start_monitoring()
-    elif len(sys.argv) > 1 and sys.argv[1] == "collect":
-        delay_seconds = None
-        if len(sys.argv) > 2:
-            try:
-                delay_seconds = float(sys.argv[2])
-                print(f"使用指定延迟时间: {delay_seconds}秒")
-            except ValueError:
-                print("延迟时间参数无效，使用默认计算方式")
-        data_collector.collect_all_historical_data(delay_seconds)
-    elif len(sys.argv) > 1 and sys.argv[1] == "analyze":
-        analyzer.run_analysis()
-    elif len(sys.argv) > 1 and sys.argv[1] == "info":
-        print("=== 数据信息 ===")
-        boards = data_reader.get_available_boards()
-        print(f"可用板块数量: {len(boards)}")
-        print(f"板块列表: {boards[:10]}{'...' if len(boards) > 10 else ''}")
-        
-        if boards:
-            sample_board = boards[0]
-            dates = data_reader.get_available_dates(sample_board)
-            print(f"\n{sample_board} 可用日期: {dates}")
-            
-            latest_data = data_reader.get_latest_data(sample_board, 5)
-            if latest_data is not None:
-                print(f"\n{sample_board} 最新5条数据:")
-                print(latest_data[['日期时间', '开盘', '收盘', '最高', '最低']].to_string())
-    else:
-        # 交互式菜单，方便在VSCode中运行
-        print("=== 板块数据收集与分析系统 ===")
-        print("1. 启动数据收集监控模式")
-        print("2. 手动获取历史数据")
-        print("3. 手动分析所有板块")
-        print("4. 查看数据信息")
-        print("5. 退出")
-        print()
-        print("命令行使用方法:")
-        print("  python industry_analysis.py monitor             # 启动数据收集监控")
-        print("  python industry_analysis.py collect             # 手动获取历史数据")
-        print("  python industry_analysis.py collect <延迟秒数>    # 指定延迟获取历史数据")
-        print("  python industry_analysis.py analyze             # 手动分析")
-        print("  python industry_analysis.py info                # 查看数据信息")
-        print()
-        
-        while True:
-            try:
-                choice = input("请选择功能 (1-5): ").strip()
-                
-                if choice == "1":
-                    print("启动数据收集监控模式...")
-                    data_collector.start_monitoring()
-                    break
-                elif choice == "2":
-                    delay_input = input("请输入延迟时间（秒，回车使用自动计算）: ").strip()
-                    delay_seconds = None
-                    if delay_input:
-                        try:
-                            delay_seconds = float(delay_input)
-                        except ValueError:
-                            print("输入的延迟时间无效，将使用自动计算")
-                    print("开始获取历史数据...")
-                    data_collector.collect_all_historical_data(delay_seconds)
-                    break
-                elif choice == "3":
-                    print("开始分析所有板块...")
-                    analyzer.run_analysis()
-                    break
-                elif choice == "4":
-                    print("查看数据信息...")
-                    boards = data_reader.get_available_boards()
-                    print(f"可用板块数量: {len(boards)}")
-                    if boards:
-                        print(f"板块列表: {boards[:10]}{'...' if len(boards) > 10 else ''}")
-                        sample_board = boards[0]
-                        dates = data_reader.get_available_dates(sample_board)
-                        print(f"\n{sample_board} 可用日期: {dates}")
-                        
-                        latest_data = data_reader.get_latest_data(sample_board, 5)
-                        if latest_data is not None:
-                            print(f"\n{sample_board} 最新5条数据:")
-                            print(latest_data[['日期时间', '开盘', '收盘', '最高', '最低']].to_string())
-                    break
-                elif choice == "5":
-                    print("退出程序")
-                    break
-                else:
-                    print("无效选择，请输入1-5")
-            except KeyboardInterrupt:
-                print("\n程序已退出")
-                break
-            except Exception as e:
-                print(f"发生错误: {e}")
-                break

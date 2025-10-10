@@ -10,3 +10,8 @@ storage/Positions
 config.yaml
 
 logs/*
+
+# SQLite database files
+*.db
+*.sqlite
+*.sqlite3
