@@ -48,5 +48,8 @@ from financial_framework.index import Index
 # indexc = Index()
 # print(indexc.get_realtime_1min_data())
 
-index_zh_a_hist_min_em_df = ak.index_zh_a_hist_min_em(symbol="BK0125", period="5", start_date="2025-09-11 09:30:00", end_date="2025-12-11 19:00:00")
+index_zh_a_hist_min_em_df = ak.index_zh_a_hist_min_em(symbol="000300", period="5", start_date="2025-09-11 09:30:00", end_date="2025-12-11 19:00:00")
 print(index_zh_a_hist_min_em_df)
+
+# boards_df = ak.stock_board_industry_name_em()
+# print(boards_df)

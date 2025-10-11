@@ -51,7 +51,7 @@ class Index(FinancialInstrument):
     def get_realtime_1min_data(self):
         """获取指数实时1分钟数据"""
         try:
-            realtime_df = ak.stock_zh_index_spot_em(symbol="中证系列指数")
+            realtime_df = ak.stock_zh_index_spot_sina()
             if not realtime_df.empty:
                 realtime_df = realtime_df.rename(columns={
                     '代码': 'code',
