@@ -15,6 +15,8 @@ import numpy as np
 import push as push
 import settings
 from financial_framework.index import Index
+from financial_framework.concept_sector import ConceptSector
+from financial_framework.unified_financial_system import UnifiedDataCollector
 
 
 # hh = ak.index_csindex_all()
@@ -34,7 +36,8 @@ from financial_framework.index import Index
 # stock_zh_index_spot_em_df = ak.stock_zh_index_spot_em(symbol="中证系列指数")
 # print(stock_zh_index_spot_em_df)
 
-
+# stock_zh_index_spot_sina_df = ak.stock_zh_index_spot_sina()
+# print(stock_zh_index_spot_sina_df)
 
 # index_zh_a_hist_min_em_df = ak.index_zh_a_hist_min_em(symbol="H30590", period="1", start_date="2024-12-11 09:30:00", end_date="2025-12-11 19:00:00")
 # print(index_zh_a_hist_min_em_df)
@@ -48,8 +51,30 @@ from financial_framework.index import Index
 # indexc = Index()
 # print(indexc.get_realtime_1min_data())
 
-index_zh_a_hist_min_em_df = ak.index_zh_a_hist_min_em(symbol="000300", period="5", start_date="2025-09-11 09:30:00", end_date="2025-12-11 19:00:00")
-print(index_zh_a_hist_min_em_df)
+# index_zh_a_hist_min_em_df = ak.index_zh_a_hist_min_em(symbol="000300", period="5", start_date="2025-09-11 09:30:00", end_date="2025-12-11 19:00:00")
+# print(index_zh_a_hist_min_em_df)
 
 # boards_df = ak.stock_board_industry_name_em()
 # print(boards_df)
+
+# stock_board_concept_name_em_df = ak.stock_board_concept_name_em()
+# print(stock_board_concept_name_em_df)
+
+# concept = ConceptSector()
+# print(concept.get_historical_5min_data({'code': 'BK0968', 'name': '固态电池'}))
+
+# concept = ConceptSector()
+# print(concept.get_realtime_1min_data())
+
+# concept = ConceptSector()
+# print(concept.get_daily_data({'code': 'BK0968', 'name': '固态电池'}))
+
+# stock_board_concept_hist_em_df = ak.stock_board_concept_hist_em(symbol="固态电池", period="daily", start_date="20250101", end_date="20250227", adjust="")
+# print(stock_board_concept_hist_em_df)
+
+
+# fund_etf_spot_em_df = ak.fund_etf_spot_em()
+# print(fund_etf_spot_em_df)
+uu = UnifiedDataCollector()
+# uu.collect_realtime_1min_data(instrument_type='concept_sector')
+uu.start_monitoring()

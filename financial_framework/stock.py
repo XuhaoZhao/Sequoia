@@ -1,12 +1,14 @@
 import akshare as ak
-import pandas as pd
 from .financial_instruments import FinancialInstrument
 from .logger_config import log_data_operation, log_method_call
 
 
 class Stock(FinancialInstrument):
     """股票类"""
-    
+
+    # 获取5分钟历史数据的延迟时间（秒），防止被封禁IP
+    delay_seconds = 80
+
     def get_instrument_type(self):
         return "股票"
     
@@ -24,29 +26,34 @@ class Stock(FinancialInstrument):
             return []
     
     @log_data_operation('获取股票历史5分钟数据')
-    def get_historical_5min_data(self, symbol, period="5"):
+    def get_historical_5min_data(self, stock_info, period="5"):
         """获取股票历史5分钟数据"""
         try:
-            self.log_debug(f"开始获取股票{symbol}的5分钟历史数据")
+            self.log_debug(f"开始获取股票{stock_info['code']}的5分钟历史数据")
             # 使用股票代码获取分钟级历史数据
-            hist_data = ak.stock_zh_a_hist_min_em(symbol=symbol, period=period, adjust="")
-            if not hist_data.empty:
-                hist_data['日期时间'] = pd.to_datetime(hist_data['时间'])
-                # 重命名列以匹配标准格式
-                hist_data = hist_data.rename(columns={
-                    '时间': '日期时间',
-                    '开盘': '开盘',
-                    '收盘': '收盘',
-                    '最高': '最高',
-                    '最低': '最低',
-                    '成交量': '成交量',
-                    '成交额': '成交额'
+            hist_data = ak.stock_zh_a_hist_min_em(symbol=stock_info['code'], period=period, adjust="")
+            if hist_data.empty:
+                return []
+
+            # 转换为标准格式的字典列表
+            result = []
+            for _, row in hist_data.iterrows():
+                result.append({
+                    'code': str(stock_info['code']),
+                    'name': stock_info['name'],
+                    'datetime': str(row['时间']),
+                    'open': float(row['开盘']),
+                    'high': float(row['最高']),
+                    'low': float(row['最低']),
+                    'close': float(row['收盘']),
+                    'volume': int(row.get('成交量', 0)),
+                    'amount': float(row.get('成交额', 0))
                 })
-                self.log_info(f"成功获取股票{symbol}历史数据{len(hist_data)}条")
-            return hist_data
+            self.log_info(f"成功获取股票{stock_info['code']}历史数据{len(result)}条")
+            return result
         except Exception as e:
-            self.log_error(f"获取{symbol}股票历史5分钟数据失败: {e}", exc_info=True)
-            return None
+            self.log_error(f"获取{stock_info['code']}股票历史5分钟数据失败: {e}", exc_info=True)
+            return []
     
     @log_data_operation('获取股票实时1分钟数据')
     def get_realtime_1min_data(self):
@@ -71,28 +78,34 @@ class Stock(FinancialInstrument):
             return None
     
     @log_data_operation('获取股票日K数据')
-    def get_daily_data(self, symbol, start_date=None, end_date=None):
+    def get_daily_data(self, stock_info, start_date=None, end_date=None):
         """获取股票日K数据"""
         try:
-            self.log_debug(f"开始获取股票{symbol}日K数据")
+            self.log_debug(f"开始获取股票{stock_info['code']}日K数据")
             # 获取股票日K线数据
-            daily_data = ak.stock_zh_a_hist(symbol=symbol, period="daily", start_date=start_date, end_date=end_date, adjust="")
-            if not daily_data.empty:
-                daily_data['日期时间'] = pd.to_datetime(daily_data['日期'])
-                daily_data = daily_data.rename(columns={
-                    '日期': '日期时间',
-                    '开盘': '开盘',
-                    '收盘': '收盘',
-                    '最高': '最高',
-                    '最低': '最低',
-                    '成交量': '成交量',
-                    '成交额': '成交额'
+            daily_data = ak.stock_zh_a_hist(symbol=stock_info['code'], period="daily", start_date=start_date, end_date=end_date, adjust="")
+            if daily_data.empty:
+                return []
+
+            # 转换为标准格式的字典列表
+            result = []
+            for _, row in daily_data.iterrows():
+                result.append({
+                    'code': str(stock_info['code']),
+                    'name': stock_info['name'],
+                    'datetime': str(row['日期']),
+                    'open': float(row['开盘']),
+                    'high': float(row['最高']),
+                    'low': float(row['最低']),
+                    'close': float(row['收盘']),
+                    'volume': int(row.get('成交量', 0)),
+                    'amount': float(row.get('成交额', 0))
                 })
-                self.log_info(f"成功获取股票{symbol}日K数据{len(daily_data)}条")
-            return daily_data
+            self.log_info(f"成功获取股票{stock_info['code']}日K数据{len(result)}条")
+            return result
         except Exception as e:
-            self.log_error(f"获取{symbol}股票日K数据失败: {e}", exc_info=True)
-            return None
+            self.log_error(f"获取{stock_info['code']}股票日K数据失败: {e}", exc_info=True)
+            return []
     
     def _get_data_api_params(self, symbol):
         """股票API参数"""
