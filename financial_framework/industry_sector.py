@@ -20,8 +20,17 @@ class IndustrySector(FinancialInstrument):
             print(f"获取行业板块列表失败: {e}")
             return []
     
-    def get_historical_5min_data(self, board_info, period="5"):
-        """获取行业板块历史5分钟数据"""
+    def get_historical_min_data(self, board_info, period="5", delay_seconds=1.0):
+        """获取行业板块历史分时数据
+
+        Args:
+            board_info: 板块信息字典（包含 code 和 name）
+            period: 数据周期（"1", "5", "15", "30", "60"等，单位：分钟）
+            delay_seconds: 延迟时间（秒）
+
+        Returns:
+            字典列表格式的数据
+        """
         try:
             hist_data = ak.stock_board_industry_hist_min_em(symbol=board_info['name'], period=period)
             if hist_data.empty:
@@ -43,7 +52,7 @@ class IndustrySector(FinancialInstrument):
                 })
             return result
         except Exception as e:
-            print(f"获取{board_info['name']}行业板块历史5分钟数据失败: {e}")
+            print(f"获取{board_info['name']}行业板块{period}分钟历史数据失败: {e}")
             return []
     
     def get_realtime_1min_data(self):

@@ -42,11 +42,12 @@ class UnifiedDataCollector(LoggerMixin):
         self.log_info("统一数据收集器初始化完成")
     
     @log_method_call(include_args=False)
-    def collect_all_historical_5min_data(self, instrument_type='industry_sector', delay_seconds=None):
-        """收集指定类型产品的5分钟历史数据（遍历该类型下所有子项）
+    def collect_all_historical_min_data(self, instrument_type='industry_sector', period="5", delay_seconds=None):
+        """收集指定类型产品的历史分时数据（遍历该类型下所有子项）
 
         Args:
             instrument_type: 产品类型 ('industry_sector', 'stock', 'etf', 'concept_sector', 'index')
+            period: 数据周期（"1", "5", "30"等，单位：分钟）
             delay_seconds: 延迟秒数（批量收集时使用），如果为None则使用各类的默认延迟参数
         """
         instruments_map = {
@@ -68,8 +69,18 @@ class UnifiedDataCollector(LoggerMixin):
             delay_seconds = instrument.__class__.delay_seconds
             self.log_info(f"使用{instrument.get_instrument_type()}的默认延迟时间: {delay_seconds}秒")
 
-        # 调用基类的 collect_all_historical_5min_data 方法
-        instrument.collect_all_historical_5min_data(delay_seconds)
+        # 调用基类的 collect_all_historical_min_data 方法
+        instrument.collect_all_historical_min_data(period, delay_seconds)
+
+    # 保持向后兼容的方法
+    def collect_all_historical_5min_data(self, instrument_type='industry_sector', delay_seconds=None):
+        """收集指定类型产品的5分钟历史数据（向后兼容方法）
+
+        Args:
+            instrument_type: 产品类型 ('industry_sector', 'stock', 'etf', 'concept_sector', 'index')
+            delay_seconds: 延迟秒数（批量收集时使用），如果为None则使用各类的默认延迟参数
+        """
+        return self.collect_all_historical_min_data(instrument_type, "5", delay_seconds)
     
     @log_method_call(include_args=False)
     def collect_realtime_1min_data(self, instrument_type):
@@ -112,14 +123,14 @@ class UnifiedDataCollector(LoggerMixin):
             kwargs={'instrument_type': 'industry_sector'}
         )
 
-        # 每分钟收集实时数据
+        # 每2分钟收集实时数据
         self.scheduler.add_job(
             func=self.collect_realtime_1min_data,
-            trigger=CronTrigger(minute='*'),
+            trigger=CronTrigger(minute='*/2'),
             id='collect_realtime_data',
             name='收集1分钟实时数据',
             replace_existing=True,
-            kwargs={'instrument_type': 'concept_sector'} 
+            kwargs={'instrument_type': 'index'}
         )
 
         # 启动调度器
@@ -250,38 +261,50 @@ class IndustryDataCollector(UnifiedDataCollector):
         # 转换为原有格式
         return [{'板块名称': board['name'], '板块代码': board['code']} for board in boards]
     
+    def get_historical_min_data(self, board_name, period="5"):
+        """获取指定板块的历史分时数据（兼容性方法）"""
+        return self.industry_sector.get_historical_min_data({'name': board_name}, period)
+
     def get_historical_5min_data(self, board_name, period="5"):
         """获取指定板块的5分钟历史数据（兼容性方法）"""
-        return self.industry_sector.get_historical_5min_data(board_name, period)
-    
+        return self.get_historical_min_data(board_name, period)
+
+    def save_historical_min_data(self, board_info, data, period="5"):
+        """保存历史分时数据到数据库（兼容性方法）"""
+        return self.industry_sector.save_historical_min_data(board_info, data, period)
+
     def save_historical_5min_data(self, board_info, data, period="5"):
         """保存5分钟历史数据到数据库（兼容性方法）"""
-        return self.industry_sector.save_historical_5min_data(board_info, data, period)
+        return self.save_historical_min_data(board_info, data, period)
     
     def get_realtime_1min_data(self):
         """获取1分钟实时数据（兼容性方法）"""
         return self.industry_sector.get_realtime_1min_data()
     
+    def collect_all_historical_min_data(self, period="5", delay_seconds=None):
+        """收集所有板块历史分时数据（兼容性方法）"""
+        return self.industry_sector.collect_all_historical_min_data(period, delay_seconds)
+
     def collect_all_historical_5min_data(self, delay_seconds=None):
         """收集所有板块5分钟历史数据（兼容性方法）"""
-        return self.industry_sector.collect_all_historical_5min_data(delay_seconds)
+        return self.collect_all_historical_min_data("5", delay_seconds)
     
     # 保持原有方法名称以兼容旧代码
     def get_historical_data(self, board_name, period="5"):
         """获取指定板块的历史数据（兼容性方法）"""
-        return self.get_historical_5min_data(board_name, period)
-    
+        return self.get_historical_min_data(board_name, period)
+
     def save_historical_data(self, board_info, data, period="5"):
         """保存历史数据到数据库（兼容性方法）"""
-        return self.save_historical_5min_data(board_info, data, period)
-    
+        return self.save_historical_min_data(board_info, data, period)
+
     def get_realtime_data(self):
         """获取实时数据（兼容性方法）"""
         return self.get_realtime_1min_data()
-    
-    def collect_all_historical_data(self, delay_seconds=None):
+
+    def collect_all_historical_data(self, period="5", delay_seconds=None):
         """收集所有板块历史数据（兼容性方法）"""
-        return self.collect_all_historical_5min_data(delay_seconds)
+        return self.collect_all_historical_min_data(period, delay_seconds)
 
 
 class IndustryAnalyzer(UnifiedAnalyzer):

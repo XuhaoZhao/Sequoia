@@ -17,6 +17,7 @@ import settings
 from financial_framework.index import Index
 from financial_framework.concept_sector import ConceptSector
 from financial_framework.unified_financial_system import UnifiedDataCollector
+from data_collect.stock_chip_race import stock_chip_race_open,stock_chip_race_end,stock_large_cap_filter
 
 
 # hh = ak.index_csindex_all()
@@ -75,6 +76,12 @@ from financial_framework.unified_financial_system import UnifiedDataCollector
 
 # fund_etf_spot_em_df = ak.fund_etf_spot_em()
 # print(fund_etf_spot_em_df)
-uu = UnifiedDataCollector()
-# uu.collect_realtime_1min_data(instrument_type='concept_sector')
-uu.start_monitoring()
+# uu = UnifiedDataCollector()
+# # uu.collect_realtime_1min_data(instrument_type='concept_sector')
+# uu.start_monitoring()
+
+# temp_df = stock_large_cap_filter(debug=True)
+# print(temp_df)
+
+index_zh_a_hist_min_em_df = ak.index_zh_a_hist_min_em(symbol="000001", period="1", start_date="2025-10-14 09:30:00", end_date="2025-12-11 19:00:00")
+print(index_zh_a_hist_min_em_df)

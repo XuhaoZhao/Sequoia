@@ -30,13 +30,16 @@ class FinancialInstrument(ABC, LoggerMixin):
         pass
     
     @abstractmethod
-    def get_historical_5min_data(self, board_info, period="5", delay_seconds=1.0):
-        """获取历史5分钟分时数据
+    def get_historical_min_data(self, instrument_info, period="5", delay_seconds=1.0):
+        """获取历史分时数据
 
         Args:
-            symbol: 产品代码或名称
-            period: 数据周期，默认"5"分钟
+            instrument_info: 产品信息字典（包含 code 和 name）
+            period: 数据周期，可选 "1", "5", "15", "30", "60" 等（单位：分钟）
             delay_seconds: 获取数据后的延迟时间（秒），防止被封禁IP，默认1.0秒
+
+        Returns:
+            字典列表格式的数据
         """
         pass
     
@@ -56,18 +59,28 @@ class FinancialInstrument(ABC, LoggerMixin):
         pass
 
     
-    @log_data_operation('保存5分钟历史数据')
-    def save_historical_5min_data(self, instrument_info, data, period="5"):
-        """保存5分钟历史数据到数据库
+    @log_data_operation('保存历史分时数据')
+    def save_historical_min_data(self, instrument_info, data, period="5"):
+        """保存历史分时数据到数据库
 
         Args:
             instrument_info: 产品信息字典
             data: 字典列表格式的数据
-            period: 数据周期
+            period: 数据周期（"1", "5", "30"等，单位：分钟）
         """
         try:
             instrument_name = instrument_info.get('name', self.name)
-            self.log_info(f"开始保存{instrument_name}的5分钟历史数据")
+            # 根据周期确定数据库存储的period标识
+            period_map = {
+                "1": "1m",
+                "5": "5m",
+                "15": "15m",
+                "30": "30m",
+                "60": "60m"
+            }
+            db_period = period_map.get(str(period), f"{period}m")
+
+            self.log_info(f"开始保存{instrument_name}的{period}分钟历史数据")
 
             # 添加产品信息
             self.db.add_or_update_stock_info(
@@ -78,11 +91,11 @@ class FinancialInstrument(ABC, LoggerMixin):
             )
 
             # 插入数据（data应该是字典列表）
-            inserted_count = self.db.insert_kline_data('5m', data)
-            self.log_info(f"已保存{instrument_info.get('name', self.name)}历史数据到数据库，共{inserted_count}条记录")
-            
+            inserted_count = self.db.insert_kline_data(db_period, data)
+            self.log_info(f"已保存{instrument_info.get('name', self.name)}{period}分钟历史数据到数据库，共{inserted_count}条记录")
+
         except Exception as e:
-            self.log_error(f"保存{instrument_info.get('name', self.name)}历史数据到数据库失败: {e}", exc_info=True)
+            self.log_error(f"保存{instrument_info.get('name', self.name)}{period}分钟历史数据到数据库失败: {e}", exc_info=True)
             raise
     
     @log_data_operation('收集1分钟实时数据')
@@ -387,9 +400,14 @@ class FinancialInstrument(ABC, LoggerMixin):
         """获取产品类型"""
         pass
     
-    def collect_all_historical_5min_data(self, delay_seconds=None):
-        """获取所有产品的5分钟历史数据"""
-        print(f"开始获取所有{self.get_instrument_type()}历史数据 - {datetime.now()}")
+    def collect_all_historical_min_data(self, period="5", delay_seconds=None):
+        """获取所有产品的历史分时数据
+
+        Args:
+            period: 数据周期（"1", "5", "30"等，单位：分钟）
+            delay_seconds: 延迟秒数，如果为None则使用类的默认值
+        """
+        print(f"开始获取所有{self.get_instrument_type()}{period}分钟历史数据 - {datetime.now()}")
         instruments = self.get_all_instruments()
         total_instruments = len(instruments)
 
@@ -400,18 +418,18 @@ class FinancialInstrument(ABC, LoggerMixin):
 
         estimated_total_time = delay_seconds * total_instruments
         print(f"预计总耗时{estimated_total_time/60:.1f}分钟，共{total_instruments}个{self.get_instrument_type()}")
-        
+
         instruments = list(reversed(instruments))
         for i, instrument_info in enumerate(instruments, 1):
             name = instrument_info.get('name', instrument_info.get('板块名称', ''))
             code = instrument_info.get('code', instrument_info.get('板块代码', ''))
-            print(f"正在获取{name}({code})的5分钟历史数据... ({i}/{total_instruments})")
-            
-            hist_data = self.get_historical_5min_data(instrument_info, "5")
+            print(f"正在获取{name}({code})的{period}分钟历史数据... ({i}/{total_instruments})")
+
+            hist_data = self.get_historical_min_data(instrument_info, period)
             if hist_data is not None:
-                self.save_historical_5min_data(instrument_info, hist_data, "5")
-            
+                self.save_historical_min_data(instrument_info, hist_data, period)
+
             if i < total_instruments:
                 time.sleep(delay_seconds)
-        
-        print(f"所有{self.get_instrument_type()}5分钟历史数据获取完成 - {datetime.now()}")
+
+        print(f"所有{self.get_instrument_type()}{period}分钟历史数据获取完成 - {datetime.now()}")

@@ -25,8 +25,17 @@ class ETF(FinancialInstrument):
             self.log_error(f"获取ETF列表失败: {e}", exc_info=True)
             return []
     
-    def get_historical_5min_data(self, etf_info, period="5"):
-        """获取ETF历史5分钟数据"""
+    def get_historical_min_data(self, etf_info, period="5", delay_seconds=1.0):
+        """获取ETF历史分时数据
+
+        Args:
+            etf_info: ETF信息字典（包含 code 和 name）
+            period: 数据周期（"1", "5", "15", "30", "60"等，单位：分钟）
+            delay_seconds: 延迟时间（秒）
+
+        Returns:
+            字典列表格式的数据
+        """
         try:
             hist_data = ak.fund_etf_hist_min_em(symbol=etf_info['code'], period=period)
             if hist_data.empty:
@@ -48,7 +57,7 @@ class ETF(FinancialInstrument):
                 })
             return result
         except Exception as e:
-            print(f"获取{etf_info['name']}ETF历史5分钟数据失败: {e}")
+            print(f"获取{etf_info['name']}ETF{period}分钟历史数据失败: {e}")
             return []
     
     def get_realtime_1min_data(self):

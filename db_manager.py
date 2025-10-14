@@ -10,7 +10,7 @@ from contextlib import contextmanager
 class IndustryDataDB:
     """
     行业数据SQLite数据库管理器
-    支持按月分表存储5分钟和1分钟K线数据
+    支持按月分表存储1分钟、5分钟和30分钟K线数据
     """
     
     def __init__(self, db_path: str = "industry_data.db"):
@@ -71,11 +71,11 @@ class IndustryDataDB:
     def _get_table_name(self, period: str, year_month: str) -> str:
         """
         生成表名
-        
+
         Args:
-            period: 数据周期 ('1m' 或 '5m')
+            period: 数据周期 ('1m', '5m' 或 '30m')
             year_month: 年月 (格式: YYYY-MM)
-        
+
         Returns:
             表名
         """
@@ -122,11 +122,11 @@ class IndustryDataDB:
     def ensure_table_exists(self, period: str, datetime_str: str) -> str:
         """
         确保指定时间的表存在
-        
+
         Args:
-            period: 数据周期 ('1m' 或 '5m')
+            period: 数据周期 ('1m', '5m' 或 '30m')
             datetime_str: 时间字符串 (格式: YYYY-MM-DD HH:MM:SS)
-        
+
         Returns:
             表名
         """
@@ -150,11 +150,11 @@ class IndustryDataDB:
     def insert_kline_data(self, period: str, data: List[Dict]) -> int:
         """
         插入K线数据
-        
+
         Args:
-            period: 数据周期 ('1m' 或 '5m')
+            period: 数据周期 ('1m', '5m' 或 '30m')
             data: 数据列表，每个元素包含: code, name, datetime, open, high, low, close, volume, amount
-        
+
         Returns:
             成功插入的记录数
         """
@@ -201,18 +201,18 @@ class IndustryDataDB:
                 conn.commit()
         return inserted_count
     
-    def query_kline_data(self, period: str, code: str = None, start_date: str = None, 
+    def query_kline_data(self, period: str, code: str = None, start_date: str = None,
                         end_date: str = None, limit: int = None) -> pd.DataFrame:
         """
         查询K线数据
-        
+
         Args:
-            period: 数据周期 ('1m' 或 '5m')
+            period: 数据周期 ('1m', '5m' 或 '30m')
             code: 股票/板块代码，为None时查询所有
             start_date: 开始日期 (格式: YYYY-MM-DD)
             end_date: 结束日期 (格式: YYYY-MM-DD)
             limit: 限制返回记录数
-        
+
         Returns:
             包含K线数据的DataFrame
         """

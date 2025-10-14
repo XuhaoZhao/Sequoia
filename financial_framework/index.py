@@ -1,6 +1,7 @@
 import akshare as ak
 from datetime import datetime, timedelta
 from .financial_instruments import FinancialInstrument
+from rewrite_ak_share.rewrite_index_stock_zh import stock_zh_index_spot_em
 
 
 class Index(FinancialInstrument):
@@ -21,10 +22,19 @@ class Index(FinancialInstrument):
             print(f"获取概指数列表列表失败: {e}")
             return []
     
-    def get_historical_5min_data(self, index_info, period="5"):
-        """获取指数历史5分钟数据"""
+    def get_historical_min_data(self, index_info, period="5", delay_seconds=1.0):
+        """获取指数历史分时数据
+
+        Args:
+            index_info: 指数信息字典（包含 code 和 name）
+            period: 数据周期（"1", "5", "15", "30", "60"等，单位：分钟）
+            delay_seconds: 延迟时间（秒）
+
+        Returns:
+            字典列表格式的数据
+        """
         try:
-            # 设置结束时间为当前时间，开始时间为两个月前
+            # 设置结束时间为当前时间，开始时间为30天前
             end_date = datetime.now()
             start_date = end_date - timedelta(days=30)
 
@@ -52,13 +62,13 @@ class Index(FinancialInstrument):
                 })
             return result
         except Exception as e:
-            print(f"获取{index_info['name']}指数历史5分钟数据失败: {e}")
+            print(f"获取{index_info['name']}指数{period}分钟历史数据失败: {e}")
             return []
     
     def get_realtime_1min_data(self):
         """获取指数实时1分钟数据"""
         try:
-            realtime_df = ak.stock_zh_index_spot_sina()
+            realtime_df = stock_zh_index_spot_em('中证系列指数')
             if not realtime_df.empty:
                 realtime_df = realtime_df.rename(columns={
                     '代码': 'code',
