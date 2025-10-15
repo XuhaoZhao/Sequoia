@@ -97,24 +97,7 @@ class IndustryDataCollector:
         except Exception as e:
             print(f"保存{board_name}历史数据到数据库失败: {e}")
     
-    def load_historical_data(self, board_name, period="5"):
-        """从文件加载历史数据"""
-        filename = os.path.join(self.historical_dir, f"{board_name}_{period}min_historical.csv")
-        if os.path.exists(filename):
-            data = pd.read_csv(filename, encoding='utf-8')
-            data['日期时间'] = pd.to_datetime(data['日期时间'])
-            return data
-        return None
-    
-    def clean_historical_data_dir(self):
-        """清理历史数据文件夹"""
-        if os.path.exists(self.historical_dir):
-            import shutil
-            shutil.rmtree(self.historical_dir)
-            print(f"已清理历史数据目录: {self.historical_dir}")
-        
-        os.makedirs(self.historical_dir)
-        print(f"已重建历史数据目录: {self.historical_dir}")
+
     
     def collect_all_historical_data(self, delay_seconds=None):
         """每天早晨8点定时获取所有板块的历史数据"""
