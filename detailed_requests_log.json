@@ -1,0 +1,107 @@
+[
+  {
+    "stock_code": "300115",
+    "stock_name": null,
+    "detail_requests": [
+      {
+        "request_id": "56327.68",
+        "url": "https://7.push2.eastmoney.com/api/qt/stock/details/sse?fields1=f1,f2,f3,f4&fields2=f51,f52,f53,f54,f55&mpi=2000&ut=bd1d9ddb04089700cf9c27f6f7426281&fltt=2&pos=-0&secid=0.300115&wbp2u=|0|0|0|web",
+        "method": "GET",
+        "headers": {
+          "Accept": "text/event-stream",
+          "Cache-Control": "no-cache",
+          "Referer": "https://quote.eastmoney.com/f1.html?newcode=0.300115",
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+          "sec-ch-ua": "\"Google Chrome\";v=\"141\", \"Not?A_Brand\";v=\"8\", \"Chromium\";v=\"141\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"macOS\""
+        },
+        "postData": "",
+        "timestamp": 115507.396691,
+        "wallTime": "2025-10-16T06:37:16.134359",
+        "initiator": {
+          "columnNumber": 609,
+          "lineNumber": 149,
+          "type": "parser",
+          "url": "https://quote.eastmoney.com/f1.html?newcode=0.300115"
+        },
+        "stock_code": "300115",
+        "stock_name": null,
+        "response_body": "无法获取响应体: Message: unknown error: unhandled inspector error: {\"code\":-32000,\"message\":\"No data found for resource with given identifier\"}\n  (Session info: chrome=141.0.7390.108)\nStacktrace:\n0   chromedriver                        0x000000010d0e42e8 chromedriver + 6107880\n1   chromedriver                        0x000000010d0db9ea chromedriver + 6072810\n2   chromedriver                        0x000000010cb7a156 chromedriver + 430422\n3   chromedriver                        0x000000010cb61243 chromedriver + 328259\n4   chromedriver                        0x000000010cb5fbcf chromedriver + 322511\n5   chromedriver                        0x000000010cb6033f chromedriver + 324415\n6   chromedriver                        0x000000010cb60294 chromedriver + 324244\n7   chromedriver                        0x000000010cb7e40f chromedriver + 447503\n8   chromedriver                        0x000000010cc26a6a chromedriver + 1137258\n9   chromedriver                        0x000000010cbf2d32 chromedriver + 924978\n10  chromedriver                        0x000000010cc1a21e chromedriver + 1085982\n11  chromedriver                        0x000000010cbf2b03 chromedriver + 924419\n12  chromedriver                        0x000000010cbbe397 chromedriver + 709527\n13  chromedriver                        0x000000010cbbf801 chromedriver + 714753\n14  chromedriver                        0x000000010d0a0e60 chromedriver + 5832288\n15  chromedriver                        0x000000010d0a50c5 chromedriver + 5849285\n16  chromedriver                        0x000000010d07c477 chromedriver + 5682295\n17  chromedriver                        0x000000010d0a5b5f chromedriver + 5851999\n18  chromedriver                        0x000000010d06b904 chromedriver + 5613828\n19  chromedriver                        0x000000010d0c8b58 chromedriver + 5995352\n20  chromedriver                        0x000000010d0c8d1d chromedriver + 5995805\n21  chromedriver                        0x000000010d0db5c1 chromedriver + 6071745\n22  libsystem_pthread.dylib             0x00007ff81b0b2259 _pthread_start + 125\n23  libsystem_pthread.dylib             0x00007ff81b0adc7b thread_start + 15\n"
+      }
+    ],
+    "total_requests": 86,
+    "success": true,
+    "timestamp": "2025-10-16T06:37:38.909561"
+  },
+  {
+    "stock_code": "002050",
+    "stock_name": null,
+    "detail_requests": [
+      {
+        "request_id": "56327.182",
+        "url": "https://54.push2.eastmoney.com/api/qt/stock/details/sse?fields1=f1,f2,f3,f4&fields2=f51,f52,f53,f54,f55&mpi=2000&ut=bd1d9ddb04089700cf9c27f6f7426281&fltt=2&pos=-0&secid=0.002050&wbp2u=|0|0|0|web",
+        "method": "GET",
+        "headers": {
+          "Accept": "text/event-stream",
+          "Cache-Control": "no-cache",
+          "Referer": "https://quote.eastmoney.com/f1.html?newcode=0.002050",
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+          "sec-ch-ua": "\"Google Chrome\";v=\"141\", \"Not?A_Brand\";v=\"8\", \"Chromium\";v=\"141\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"macOS\""
+        },
+        "postData": "",
+        "timestamp": 115540.850603,
+        "wallTime": "2025-10-16T06:37:49.588590",
+        "initiator": {
+          "columnNumber": 186,
+          "lineNumber": 154,
+          "type": "parser",
+          "url": "https://quote.eastmoney.com/f1.html?newcode=0.002050"
+        },
+        "stock_code": "002050",
+        "stock_name": null,
+        "response_body": "无法获取响应体: Message: unknown error: unhandled inspector error: {\"code\":-32000,\"message\":\"No data found for resource with given identifier\"}\n  (Session info: chrome=141.0.7390.108)\nStacktrace:\n0   chromedriver                        0x000000010d0e42e8 chromedriver + 6107880\n1   chromedriver                        0x000000010d0db9ea chromedriver + 6072810\n2   chromedriver                        0x000000010cb7a156 chromedriver + 430422\n3   chromedriver                        0x000000010cb61243 chromedriver + 328259\n4   chromedriver                        0x000000010cb5fbcf chromedriver + 322511\n5   chromedriver                        0x000000010cb6033f chromedriver + 324415\n6   chromedriver                        0x000000010cb60294 chromedriver + 324244\n7   chromedriver                        0x000000010cb7e40f chromedriver + 447503\n8   chromedriver                        0x000000010cc26a6a chromedriver + 1137258\n9   chromedriver                        0x000000010cbf2d32 chromedriver + 924978\n10  chromedriver                        0x000000010cc1a21e chromedriver + 1085982\n11  chromedriver                        0x000000010cbf2b03 chromedriver + 924419\n12  chromedriver                        0x000000010cbbe397 chromedriver + 709527\n13  chromedriver                        0x000000010cbbf801 chromedriver + 714753\n14  chromedriver                        0x000000010d0a0e60 chromedriver + 5832288\n15  chromedriver                        0x000000010d0a50c5 chromedriver + 5849285\n16  chromedriver                        0x000000010d07c477 chromedriver + 5682295\n17  chromedriver                        0x000000010d0a5b5f chromedriver + 5851999\n18  chromedriver                        0x000000010d06b904 chromedriver + 5613828\n19  chromedriver                        0x000000010d0c8b58 chromedriver + 5995352\n20  chromedriver                        0x000000010d0c8d1d chromedriver + 5995805\n21  chromedriver                        0x000000010d0db5c1 chromedriver + 6071745\n22  libsystem_pthread.dylib             0x00007ff81b0b2259 _pthread_start + 125\n23  libsystem_pthread.dylib             0x00007ff81b0adc7b thread_start + 15\n"
+      }
+    ],
+    "total_requests": 76,
+    "success": true,
+    "timestamp": "2025-10-16T06:38:13.078858"
+  },
+  {
+    "stock_code": "600183",
+    "stock_name": null,
+    "detail_requests": [
+      {
+        "request_id": "56327.279",
+        "url": "https://73.push2.eastmoney.com/api/qt/stock/details/sse?fields1=f1,f2,f3,f4&fields2=f51,f52,f53,f54,f55&mpi=2000&ut=bd1d9ddb04089700cf9c27f6f7426281&fltt=2&pos=-0&secid=1.600183&wbp2u=|0|0|0|web",
+        "method": "GET",
+        "headers": {
+          "Accept": "text/event-stream",
+          "Cache-Control": "no-cache",
+          "Referer": "https://quote.eastmoney.com/f1.html?newcode=1.600183",
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+          "sec-ch-ua": "\"Google Chrome\";v=\"141\", \"Not?A_Brand\";v=\"8\", \"Chromium\";v=\"141\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"macOS\""
+        },
+        "postData": "",
+        "timestamp": 115583.232795,
+        "wallTime": "2025-10-16T06:38:31.971195",
+        "initiator": {
+          "columnNumber": 196,
+          "lineNumber": 154,
+          "type": "parser",
+          "url": "https://quote.eastmoney.com/f1.html?newcode=1.600183"
+        },
+        "stock_code": "600183",
+        "stock_name": null,
+        "response_body": "无法获取响应体: Message: unknown error: unhandled inspector error: {\"code\":-32000,\"message\":\"No data found for resource with given identifier\"}\n  (Session info: chrome=141.0.7390.108)\nStacktrace:\n0   chromedriver                        0x000000010d0e42e8 chromedriver + 6107880\n1   chromedriver                        0x000000010d0db9ea chromedriver + 6072810\n2   chromedriver                        0x000000010cb7a156 chromedriver + 430422\n3   chromedriver                        0x000000010cb61243 chromedriver + 328259\n4   chromedriver                        0x000000010cb5fbcf chromedriver + 322511\n5   chromedriver                        0x000000010cb6033f chromedriver + 324415\n6   chromedriver                        0x000000010cb60294 chromedriver + 324244\n7   chromedriver                        0x000000010cb7e40f chromedriver + 447503\n8   chromedriver                        0x000000010cc26a6a chromedriver + 1137258\n9   chromedriver                        0x000000010cbf2d32 chromedriver + 924978\n10  chromedriver                        0x000000010cc1a21e chromedriver + 1085982\n11  chromedriver                        0x000000010cbf2b03 chromedriver + 924419\n12  chromedriver                        0x000000010cbbe397 chromedriver + 709527\n13  chromedriver                        0x000000010cbbf801 chromedriver + 714753\n14  chromedriver                        0x000000010d0a0e60 chromedriver + 5832288\n15  chromedriver                        0x000000010d0a50c5 chromedriver + 5849285\n16  chromedriver                        0x000000010d07c477 chromedriver + 5682295\n17  chromedriver                        0x000000010d0a5b5f chromedriver + 5851999\n18  chromedriver                        0x000000010d06b904 chromedriver + 5613828\n19  chromedriver                        0x000000010d0c8b58 chromedriver + 5995352\n20  chromedriver                        0x000000010d0c8d1d chromedriver + 5995805\n21  chromedriver                        0x000000010d0db5c1 chromedriver + 6071745\n22  libsystem_pthread.dylib             0x00007ff81b0b2259 _pthread_start + 125\n23  libsystem_pthread.dylib             0x00007ff81b0adc7b thread_start + 15\n"
+      }
+    ],
+    "total_requests": 76,
+    "success": true,
+    "timestamp": "2025-10-16T06:38:55.499122"
+  }
+]

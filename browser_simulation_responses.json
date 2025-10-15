@@ -1,0 +1,432 @@
+[
+  {
+    "stock_code": "300115",
+    "timestamp": "2025-10-16 07:16:18",
+    "response": {
+      "status_code": 200,
+      "data": [
+        {
+          "raw": "jQuery35105104144306913571_1760570149418({\"rc\":102,\"rt\":1,\"svr\":181735163,\"lt\":1,\"full\":1,\"dlmkts\":\"\",\"data\":null});"
+        }
+      ],
+      "headers": {
+        "Server": "Microsoft-IIS/10.0",
+        "Date": "Wed, 15 Oct 2025 23:16:18 GMT",
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Transfer-Encoding": "chunked",
+        "Connection": "keep-alive",
+        "Vary": "Accept-Encoding",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Credentials": "true",
+        "Cache-Control": "no-cache",
+        "Content-Encoding": "gzip"
+      },
+      "url": "https://89.push2.eastmoney.com/api/qt/stock/details/sse?invt=2&fltt=1&cb=jQuery35105104144306913571_1760570149418&fields=f58%252Cf107%252Cf57%252Cf43%252Cf59%252Cf169%252Cf170%252Cf152%252Cf46%252Cf60%252Cf44%252Cf45%252Cf47%252Cf48%252Cf161%252Cf49%252Cf171%252Cf50%252Cf86%252Cf177%252Cf111%252Cf51%252Cf52%252Cf168%252Cf116%252Cf117%252Cf167%252Cf162%252Cf262&secid=0.300115&ut=fa5fd1943c7b386f172d6893dbfba10b&wbp2u=%257C0%257C0%257C0%257Cweb&dect=1&_=1760570149419",
+      "success": true
+    }
+  },
+  {
+    "stock_code": "002050",
+    "timestamp": "2025-10-16 07:16:28",
+    "response": {
+      "status_code": 200,
+      "data": [
+        {
+          "raw": "jQuery35105104144306913571_1760570149418({\"rc\":102,\"rt\":1,\"svr\":177617625,\"lt\":1,\"full\":1,\"dlmkts\":\"\",\"data\":null});"
+        }
+      ],
+      "headers": {
+        "Server": "Microsoft-IIS/10.0",
+        "Date": "Wed, 15 Oct 2025 23:16:28 GMT",
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Transfer-Encoding": "chunked",
+        "Connection": "keep-alive",
+        "Vary": "Accept-Encoding",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Credentials": "true",
+        "Cache-Control": "no-cache",
+        "Content-Encoding": "gzip"
+      },
+      "url": "https://73.push2.eastmoney.com/api/qt/stock/details/sse?invt=2&fltt=1&cb=jQuery35105104144306913571_1760570149418&fields=f58%252Cf107%252Cf57%252Cf43%252Cf59%252Cf169%252Cf170%252Cf152%252Cf46%252Cf60%252Cf44%252Cf45%252Cf47%252Cf48%252Cf161%252Cf49%252Cf171%252Cf50%252Cf86%252Cf177%252Cf111%252Cf51%252Cf52%252Cf168%252Cf116%252Cf117%252Cf167%252Cf162%252Cf262&secid=0.002050&ut=fa5fd1943c7b386f172d6893dbfba10b&wbp2u=%257C0%257C0%257C0%257Cweb&dect=1&_=1760570149419",
+      "success": true
+    }
+  },
+  {
+    "stock_code": "600183",
+    "timestamp": "2025-10-16 07:16:48",
+    "response": {
+      "status_code": 200,
+      "data": [
+        {
+          "raw": "jQuery35105104144306913571_1760570149418({\"rc\":102,\"rt\":1,\"svr\":177617595,\"lt\":1,\"full\":1,\"dlmkts\":\"\",\"data\":null});"
+        }
+      ],
+      "headers": {
+        "Server": "Microsoft-IIS/10.0",
+        "Date": "Wed, 15 Oct 2025 23:16:48 GMT",
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Transfer-Encoding": "chunked",
+        "Connection": "keep-alive",
+        "Vary": "Accept-Encoding",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Credentials": "true",
+        "Cache-Control": "no-cache",
+        "Content-Encoding": "gzip"
+      },
+      "url": "https://73.push2.eastmoney.com/api/qt/stock/details/sse?invt=2&fltt=1&cb=jQuery35105104144306913571_1760570149418&fields=f58%252Cf107%252Cf57%252Cf43%252Cf59%252Cf169%252Cf170%252Cf152%252Cf46%252Cf60%252Cf44%252Cf45%252Cf47%252Cf48%252Cf161%252Cf49%252Cf171%252Cf50%252Cf86%252Cf177%252Cf111%252Cf51%252Cf52%252Cf168%252Cf116%252Cf117%252Cf167%252Cf162%252Cf262&secid=1.600183&ut=fa5fd1943c7b386f172d6893dbfba10b&wbp2u=%257C0%257C0%257C0%257Cweb&dect=1&_=1760570149419",
+      "success": true
+    }
+  },
+  {
+    "stock_code": "600021",
+    "timestamp": "2025-10-16 07:17:18",
+    "response": {
+      "status_code": 200,
+      "data": [
+        {
+          "raw": "jQuery35105104144306913571_1760570149418({\"rc\":102,\"rt\":1,\"svr\":180606311,\"lt\":1,\"full\":1,\"dlmkts\":\"\",\"data\":null});"
+        }
+      ],
+      "headers": {
+        "Server": "Microsoft-IIS/10.0",
+        "Date": "Wed, 15 Oct 2025 23:17:19 GMT",
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Transfer-Encoding": "chunked",
+        "Connection": "keep-alive",
+        "Vary": "Accept-Encoding",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Credentials": "true",
+        "Cache-Control": "no-cache",
+        "Content-Encoding": "gzip"
+      },
+      "url": "https://23.push2.eastmoney.com/api/qt/stock/details/sse?invt=2&fltt=1&cb=jQuery35105104144306913571_1760570149418&fields=f58%252Cf107%252Cf57%252Cf43%252Cf59%252Cf169%252Cf170%252Cf152%252Cf46%252Cf60%252Cf44%252Cf45%252Cf47%252Cf48%252Cf161%252Cf49%252Cf171%252Cf50%252Cf86%252Cf177%252Cf111%252Cf51%252Cf52%252Cf168%252Cf116%252Cf117%252Cf167%252Cf162%252Cf262&secid=1.600021&ut=fa5fd1943c7b386f172d6893dbfba10b&wbp2u=%257C0%257C0%257C0%257Cweb&dect=1&_=1760570149419",
+      "success": true
+    }
+  },
+  {
+    "stock_code": "300274",
+    "timestamp": "2025-10-16 07:17:58",
+    "response": {
+      "status_code": 200,
+      "data": [
+        {
+          "raw": "jQuery35105104144306913571_1760570149418({\"rc\":102,\"rt\":1,\"svr\":180606387,\"lt\":1,\"full\":1,\"dlmkts\":\"\",\"data\":null});"
+        }
+      ],
+      "headers": {
+        "Server": "Microsoft-IIS/10.0",
+        "Date": "Wed, 15 Oct 2025 23:17:59 GMT",
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Transfer-Encoding": "chunked",
+        "Connection": "keep-alive",
+        "Vary": "Accept-Encoding",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Credentials": "true",
+        "Cache-Control": "no-cache",
+        "Content-Encoding": "gzip"
+      },
+      "url": "https://89.push2.eastmoney.com/api/qt/stock/details/sse?invt=2&fltt=1&cb=jQuery35105104144306913571_1760570149418&fields=f58%252Cf107%252Cf57%252Cf43%252Cf59%252Cf169%252Cf170%252Cf152%252Cf46%252Cf60%252Cf44%252Cf45%252Cf47%252Cf48%252Cf161%252Cf49%252Cf171%252Cf50%252Cf86%252Cf177%252Cf111%252Cf51%252Cf52%252Cf168%252Cf116%252Cf117%252Cf167%252Cf162%252Cf262&secid=0.300274&ut=fa5fd1943c7b386f172d6893dbfba10b&wbp2u=%257C0%257C0%257C0%257Cweb&dect=1&_=1760570149419",
+      "success": true
+    }
+  },
+  {
+    "stock_code": "600580",
+    "timestamp": "2025-10-16 07:18:49",
+    "response": {
+      "status_code": 200,
+      "data": [
+        {
+          "raw": "jQuery35105104144306913571_1760570149418({\"rc\":102,\"rt\":1,\"svr\":180606407,\"lt\":1,\"full\":1,\"dlmkts\":\"\",\"data\":null});"
+        }
+      ],
+      "headers": {
+        "Server": "Microsoft-IIS/10.0",
+        "Date": "Wed, 15 Oct 2025 23:18:49 GMT",
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Transfer-Encoding": "chunked",
+        "Connection": "keep-alive",
+        "Vary": "Accept-Encoding",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Credentials": "true",
+        "Cache-Control": "no-cache",
+        "Content-Encoding": "gzip"
+      },
+      "url": "https://45.push2.eastmoney.com/api/qt/stock/details/sse?invt=2&fltt=1&cb=jQuery35105104144306913571_1760570149418&fields=f58%252Cf107%252Cf57%252Cf43%252Cf59%252Cf169%252Cf170%252Cf152%252Cf46%252Cf60%252Cf44%252Cf45%252Cf47%252Cf48%252Cf161%252Cf49%252Cf171%252Cf50%252Cf86%252Cf177%252Cf111%252Cf51%252Cf52%252Cf168%252Cf116%252Cf117%252Cf167%252Cf162%252Cf262&secid=1.600580&ut=fa5fd1943c7b386f172d6893dbfba10b&wbp2u=%257C0%257C0%257C0%257Cweb&dect=1&_=1760570149419",
+      "success": true
+    }
+  },
+  {
+    "stock_code": "601238",
+    "timestamp": "2025-10-16 07:19:29",
+    "response": {
+      "status_code": 200,
+      "data": [
+        {
+          "raw": "jQuery35105104144306913571_1760570149418({\"rc\":102,\"rt\":1,\"svr\":183641388,\"lt\":1,\"full\":1,\"dlmkts\":\"\",\"data\":null});"
+        }
+      ],
+      "headers": {
+        "Server": "Microsoft-IIS/10.0",
+        "Date": "Wed, 15 Oct 2025 23:19:29 GMT",
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Transfer-Encoding": "chunked",
+        "Connection": "keep-alive",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Credentials": "true",
+        "Cache-Control": "no-cache"
+      },
+      "url": "https://67.push2.eastmoney.com/api/qt/stock/details/sse?invt=2&fltt=1&cb=jQuery35105104144306913571_1760570149418&fields=f58%252Cf107%252Cf57%252Cf43%252Cf59%252Cf169%252Cf170%252Cf152%252Cf46%252Cf60%252Cf44%252Cf45%252Cf47%252Cf48%252Cf161%252Cf49%252Cf171%252Cf50%252Cf86%252Cf177%252Cf111%252Cf51%252Cf52%252Cf168%252Cf116%252Cf117%252Cf167%252Cf162%252Cf262&secid=1.601238&ut=fa5fd1943c7b386f172d6893dbfba10b&wbp2u=%257C0%257C0%257C0%257Cweb&dect=1&_=1760570149419",
+      "success": true
+    }
+  },
+  {
+    "stock_code": "301269",
+    "timestamp": "2025-10-16 07:19:59",
+    "response": {
+      "status_code": 200,
+      "data": [
+        {
+          "raw": "jQuery35105104144306913571_1760570149418({\"rc\":102,\"rt\":1,\"svr\":177617629,\"lt\":1,\"full\":1,\"dlmkts\":\"\",\"data\":null});"
+        }
+      ],
+      "headers": {
+        "Server": "Microsoft-IIS/10.0",
+        "Date": "Wed, 15 Oct 2025 23:19:59 GMT",
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Transfer-Encoding": "chunked",
+        "Connection": "keep-alive",
+        "Vary": "Accept-Encoding",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Credentials": "true",
+        "Cache-Control": "no-cache",
+        "Content-Encoding": "gzip"
+      },
+      "url": "https://34.push2.eastmoney.com/api/qt/stock/details/sse?invt=2&fltt=1&cb=jQuery35105104144306913571_1760570149418&fields=f58%252Cf107%252Cf57%252Cf43%252Cf59%252Cf169%252Cf170%252Cf152%252Cf46%252Cf60%252Cf44%252Cf45%252Cf47%252Cf48%252Cf161%252Cf49%252Cf171%252Cf50%252Cf86%252Cf177%252Cf111%252Cf51%252Cf52%252Cf168%252Cf116%252Cf117%252Cf167%252Cf162%252Cf262&secid=0.301269&ut=fa5fd1943c7b386f172d6893dbfba10b&wbp2u=%257C0%257C0%257C0%257Cweb&dect=1&_=1760570149419",
+      "success": true
+    }
+  },
+  {
+    "stock_code": "601111",
+    "timestamp": "2025-10-16 07:20:19",
+    "response": {
+      "status_code": 200,
+      "data": [
+        {
+          "raw": "jQuery35105104144306913571_1760570149418({\"rc\":102,\"rt\":1,\"svr\":183124044,\"lt\":1,\"full\":1,\"dlmkts\":\"\",\"data\":null});"
+        }
+      ],
+      "headers": {
+        "Server": "Microsoft-IIS/10.0",
+        "Date": "Wed, 15 Oct 2025 23:20:19 GMT",
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Transfer-Encoding": "chunked",
+        "Connection": "keep-alive",
+        "Vary": "Accept-Encoding",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Credentials": "true",
+        "Cache-Control": "no-cache",
+        "Content-Encoding": "gzip"
+      },
+      "url": "https://7.push2.eastmoney.com/api/qt/stock/details/sse?invt=2&fltt=1&cb=jQuery35105104144306913571_1760570149418&fields=f58%252Cf107%252Cf57%252Cf43%252Cf59%252Cf169%252Cf170%252Cf152%252Cf46%252Cf60%252Cf44%252Cf45%252Cf47%252Cf48%252Cf161%252Cf49%252Cf171%252Cf50%252Cf86%252Cf177%252Cf111%252Cf51%252Cf52%252Cf168%252Cf116%252Cf117%252Cf167%252Cf162%252Cf262&secid=1.601111&ut=fa5fd1943c7b386f172d6893dbfba10b&wbp2u=%257C0%257C0%257C0%257Cweb&dect=1&_=1760570149419",
+      "success": true
+    }
+  },
+  {
+    "stock_code": "601100",
+    "timestamp": "2025-10-16 07:20:29",
+    "response": {
+      "status_code": 200,
+      "data": [
+        {
+          "raw": "jQuery35105104144306913571_1760570149418({\"rc\":102,\"rt\":1,\"svr\":183124112,\"lt\":1,\"full\":1,\"dlmkts\":\"\",\"data\":null});"
+        }
+      ],
+      "headers": {
+        "Server": "Microsoft-IIS/10.0",
+        "Date": "Wed, 15 Oct 2025 23:20:29 GMT",
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Transfer-Encoding": "chunked",
+        "Connection": "keep-alive",
+        "Vary": "Accept-Encoding",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Credentials": "true",
+        "Cache-Control": "no-cache",
+        "Content-Encoding": "gzip"
+      },
+      "url": "https://34.push2.eastmoney.com/api/qt/stock/details/sse?invt=2&fltt=1&cb=jQuery35105104144306913571_1760570149418&fields=f58%252Cf107%252Cf57%252Cf43%252Cf59%252Cf169%252Cf170%252Cf152%252Cf46%252Cf60%252Cf44%252Cf45%252Cf47%252Cf48%252Cf161%252Cf49%252Cf171%252Cf50%252Cf86%252Cf177%252Cf111%252Cf51%252Cf52%252Cf168%252Cf116%252Cf117%252Cf167%252Cf162%252Cf262&secid=1.601100&ut=fa5fd1943c7b386f172d6893dbfba10b&wbp2u=%257C0%257C0%257C0%257Cweb&dect=1&_=1760570149419",
+      "success": true
+    }
+  },
+  {
+    "stock_code": "300476",
+    "timestamp": "2025-10-16 07:20:39",
+    "response": {
+      "status_code": 200,
+      "data": [
+        {
+          "raw": "jQuery35105104144306913571_1760570149418({\"rc\":102,\"rt\":1,\"svr\":183123972,\"lt\":1,\"full\":1,\"dlmkts\":\"\",\"data\":null});"
+        }
+      ],
+      "headers": {
+        "Server": "Microsoft-IIS/10.0",
+        "Date": "Wed, 15 Oct 2025 23:20:39 GMT",
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Transfer-Encoding": "chunked",
+        "Connection": "keep-alive",
+        "Vary": "Accept-Encoding",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Credentials": "true",
+        "Cache-Control": "no-cache",
+        "Content-Encoding": "gzip"
+      },
+      "url": "https://89.push2.eastmoney.com/api/qt/stock/details/sse?invt=2&fltt=1&cb=jQuery35105104144306913571_1760570149418&fields=f58%252Cf107%252Cf57%252Cf43%252Cf59%252Cf169%252Cf170%252Cf152%252Cf46%252Cf60%252Cf44%252Cf45%252Cf47%252Cf48%252Cf161%252Cf49%252Cf171%252Cf50%252Cf86%252Cf177%252Cf111%252Cf51%252Cf52%252Cf168%252Cf116%252Cf117%252Cf167%252Cf162%252Cf262&secid=0.300476&ut=fa5fd1943c7b386f172d6893dbfba10b&wbp2u=%257C0%257C0%257C0%257Cweb&dect=1&_=1760570149419",
+      "success": true
+    }
+  },
+  {
+    "stock_code": "601138",
+    "timestamp": "2025-10-16 07:20:59",
+    "response": {
+      "status_code": 200,
+      "data": [
+        {
+          "raw": "jQuery35105104144306913571_1760570149418({\"rc\":102,\"rt\":1,\"svr\":177617624,\"lt\":1,\"full\":1,\"dlmkts\":\"\",\"data\":null});"
+        }
+      ],
+      "headers": {
+        "Server": "Microsoft-IIS/10.0",
+        "Date": "Wed, 15 Oct 2025 23:21:00 GMT",
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Transfer-Encoding": "chunked",
+        "Connection": "keep-alive",
+        "Vary": "Accept-Encoding",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Credentials": "true",
+        "Cache-Control": "no-cache",
+        "Content-Encoding": "gzip"
+      },
+      "url": "https://56.push2.eastmoney.com/api/qt/stock/details/sse?invt=2&fltt=1&cb=jQuery35105104144306913571_1760570149418&fields=f58%252Cf107%252Cf57%252Cf43%252Cf59%252Cf169%252Cf170%252Cf152%252Cf46%252Cf60%252Cf44%252Cf45%252Cf47%252Cf48%252Cf161%252Cf49%252Cf171%252Cf50%252Cf86%252Cf177%252Cf111%252Cf51%252Cf52%252Cf168%252Cf116%252Cf117%252Cf167%252Cf162%252Cf262&secid=1.601138&ut=fa5fd1943c7b386f172d6893dbfba10b&wbp2u=%257C0%257C0%257C0%257Cweb&dect=1&_=1760570149419",
+      "success": true
+    }
+  },
+  {
+    "stock_code": "300408",
+    "timestamp": "2025-10-16 07:21:29",
+    "response": {
+      "status_code": 200,
+      "data": [
+        {
+          "raw": "jQuery35105104144306913571_1760570149418({\"rc\":102,\"rt\":1,\"svr\":177617559,\"lt\":1,\"full\":1,\"dlmkts\":\"\",\"data\":null});"
+        }
+      ],
+      "headers": {
+        "Server": "Microsoft-IIS/10.0",
+        "Date": "Wed, 15 Oct 2025 23:21:30 GMT",
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Transfer-Encoding": "chunked",
+        "Connection": "keep-alive",
+        "Vary": "Accept-Encoding",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Credentials": "true",
+        "Cache-Control": "no-cache",
+        "Content-Encoding": "gzip"
+      },
+      "url": "https://34.push2.eastmoney.com/api/qt/stock/details/sse?invt=2&fltt=1&cb=jQuery35105104144306913571_1760570149418&fields=f58%252Cf107%252Cf57%252Cf43%252Cf59%252Cf169%252Cf170%252Cf152%252Cf46%252Cf60%252Cf44%252Cf45%252Cf47%252Cf48%252Cf161%252Cf49%252Cf171%252Cf50%252Cf86%252Cf177%252Cf111%252Cf51%252Cf52%252Cf168%252Cf116%252Cf117%252Cf167%252Cf162%252Cf262&secid=0.300408&ut=fa5fd1943c7b386f172d6893dbfba10b&wbp2u=%257C0%257C0%257C0%257Cweb&dect=1&_=1760570149419",
+      "success": true
+    }
+  },
+  {
+    "stock_code": "688041",
+    "timestamp": "2025-10-16 07:22:10",
+    "response": {
+      "status_code": 200,
+      "data": [
+        {
+          "raw": "jQuery35105104144306913571_1760570149418({\"rc\":102,\"rt\":1,\"svr\":183119915,\"lt\":1,\"full\":1,\"dlmkts\":\"\",\"data\":null});"
+        }
+      ],
+      "headers": {
+        "Server": "Microsoft-IIS/10.0",
+        "Date": "Wed, 15 Oct 2025 23:22:10 GMT",
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Transfer-Encoding": "chunked",
+        "Connection": "keep-alive",
+        "Vary": "Accept-Encoding",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Credentials": "true",
+        "Cache-Control": "no-cache",
+        "Content-Encoding": "gzip"
+      },
+      "url": "https://54.push2.eastmoney.com/api/qt/stock/details/sse?invt=2&fltt=1&cb=jQuery35105104144306913571_1760570149418&fields=f58%252Cf107%252Cf57%252Cf43%252Cf59%252Cf169%252Cf170%252Cf152%252Cf46%252Cf60%252Cf44%252Cf45%252Cf47%252Cf48%252Cf161%252Cf49%252Cf171%252Cf50%252Cf86%252Cf177%252Cf111%252Cf51%252Cf52%252Cf168%252Cf116%252Cf117%252Cf167%252Cf162%252Cf262&secid=1.688041&ut=fa5fd1943c7b386f172d6893dbfba10b&wbp2u=%257C0%257C0%257C0%257Cweb&dect=1&_=1760570149419",
+      "success": true
+    }
+  },
+  {
+    "stock_code": "000933",
+    "timestamp": "2025-10-16 07:23:00",
+    "response": {
+      "status_code": 200,
+      "data": [
+        {
+          "raw": "jQuery35105104144306913571_1760570149418({\"rc\":102,\"rt\":1,\"svr\":180606385,\"lt\":1,\"full\":1,\"dlmkts\":\"\",\"data\":null});"
+        }
+      ],
+      "headers": {
+        "Server": "Microsoft-IIS/10.0",
+        "Date": "Wed, 15 Oct 2025 23:23:00 GMT",
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Transfer-Encoding": "chunked",
+        "Connection": "keep-alive",
+        "Vary": "Accept-Encoding",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Credentials": "true",
+        "Cache-Control": "no-cache",
+        "Content-Encoding": "gzip"
+      },
+      "url": "https://12.push2.eastmoney.com/api/qt/stock/details/sse?invt=2&fltt=1&cb=jQuery35105104144306913571_1760570149418&fields=f58%252Cf107%252Cf57%252Cf43%252Cf59%252Cf169%252Cf170%252Cf152%252Cf46%252Cf60%252Cf44%252Cf45%252Cf47%252Cf48%252Cf161%252Cf49%252Cf171%252Cf50%252Cf86%252Cf177%252Cf111%252Cf51%252Cf52%252Cf168%252Cf116%252Cf117%252Cf167%252Cf162%252Cf262&secid=0.000933&ut=fa5fd1943c7b386f172d6893dbfba10b&wbp2u=%257C0%257C0%257C0%257Cweb&dect=1&_=1760570149419",
+      "success": true
+    }
+  },
+  {
+    "stock_code": "002475",
+    "timestamp": "2025-10-16 07:23:40",
+    "response": {
+      "status_code": 200,
+      "data": [
+        {
+          "raw": "jQuery35105104144306913571_1760570149418({\"rc\":102,\"rt\":1,\"svr\":181669473,\"lt\":1,\"full\":1,\"dlmkts\":\"\",\"data\":null});"
+        }
+      ],
+      "headers": {
+        "Server": "Microsoft-IIS/10.0",
+        "Date": "Wed, 15 Oct 2025 23:23:40 GMT",
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Transfer-Encoding": "chunked",
+        "Connection": "keep-alive",
+        "Vary": "Accept-Encoding",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Credentials": "true",
+        "Cache-Control": "no-cache",
+        "Content-Encoding": "gzip"
+      },
+      "url": "https://73.push2.eastmoney.com/api/qt/stock/details/sse?invt=2&fltt=1&cb=jQuery35105104144306913571_1760570149418&fields=f58%252Cf107%252Cf57%252Cf43%252Cf59%252Cf169%252Cf170%252Cf152%252Cf46%252Cf60%252Cf44%252Cf45%252Cf47%252Cf48%252Cf161%252Cf49%252Cf171%252Cf50%252Cf86%252Cf177%252Cf111%252Cf51%252Cf52%252Cf168%252Cf116%252Cf117%252Cf167%252Cf162%252Cf262&secid=0.002475&ut=fa5fd1943c7b386f172d6893dbfba10b&wbp2u=%257C0%257C0%257C0%257Cweb&dect=1&_=1760570149419",
+      "success": true
+    }
+  }
+]
