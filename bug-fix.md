@@ -109,3 +109,5 @@ class RealtimeCollectorService:
 python -u realtime_collector.py > log.txt 2>&1
 python -u realtime_collector.py --mode analysis > ana_log.txt 2>&1
 python -u realtime_collector.py --mode historical > his_log.txt 2>&1
+
+python -u realtime_collector.py --mode realtime > log.txt 2>&1 

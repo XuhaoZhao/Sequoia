@@ -484,7 +484,7 @@ class IndustryAnalyzer:
                         for signal in today_signals: 
                             message = f"{board_name} {period}MACD{signal['type']}信号\n时间: {signal['time']}\nMACD: {signal['macd']:.4f}\nSignal: {signal['signal']:.4f}"
                             print(message)
-                            # push.strategy(message)
+                            push.strategy(message)
                         
         
     def analyze_all_boards(self):
