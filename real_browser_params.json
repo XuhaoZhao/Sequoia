@@ -1,24 +1,25 @@
 {
-  "url": "https://push2.eastmoney.com/api/qt/stock/get?invt=2&fltt=1&cb=jQuery35105104144306913571_1760570149418&fields=f58%2Cf107%2Cf57%2Cf43%2Cf59%2Cf169%2Cf170%2Cf152%2Cf46%2Cf60%2Cf44%2Cf45%2Cf47%2Cf48%2Cf161%2Cf49%2Cf171%2Cf50%2Cf86%2Cf177%2Cf111%2Cf51%2Cf52%2Cf168%2Cf116%2Cf117%2Cf167%2Cf162%2Cf262&secid=0.000001&ut=fa5fd1943c7b386f172d6893dbfba10b&wbp2u=%7C0%7C0%7C0%7Cweb&dect=1&_=1760570149419",
+  "url": "https://82.push2.eastmoney.com/api/qt/stock/details/sse?fields1=f1,f2,f3,f4&fields2=f51,f52,f53,f54,f55&mpi=2000&ut=bd1d9ddb04089700cf9c27f6f7426281&fltt=2&pos=-0&secid=0.000001&wbp2u=|0|0|0|web",
   "params": {
-    "invt": "2",
-    "fltt": "1",
-    "cb": "jQuery35105104144306913571_1760570149418",
-    "fields": "f58%2Cf107%2Cf57%2Cf43%2Cf59%2Cf169%2Cf170%2Cf152%2Cf46%2Cf60%2Cf44%2Cf45%2Cf47%2Cf48%2Cf161%2Cf49%2Cf171%2Cf50%2Cf86%2Cf177%2Cf111%2Cf51%2Cf52%2Cf168%2Cf116%2Cf117%2Cf167%2Cf162%2Cf262",
+    "fields1": "f1,f2,f3,f4",
+    "fields2": "f51,f52,f53,f54,f55",
+    "mpi": "2000",
+    "ut": "bd1d9ddb04089700cf9c27f6f7426281",
+    "fltt": "2",
+    "pos": "-0",
     "secid": "0.000001",
-    "ut": "fa5fd1943c7b386f172d6893dbfba10b",
-    "wbp2u": "%7C0%7C0%7C0%7Cweb",
-    "dect": "1",
-    "_": "1760570149419"
+    "wbp2u": "|0|0|0|web"
   },
   "headers": {
+    "Accept": "text/event-stream",
+    "Cache-Control": "no-cache",
     "Referer": "https://quote.eastmoney.com/f1.html?newcode=0.000001",
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/141.0.0.0 Safari/537.36",
-    "sec-ch-ua": "\"Google Chrome\";v=\"141\", \"Not?A_Brand\";v=\"8\", \"Chromium\";v=\"141\"",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/140.0.0.0 Safari/537.36",
+    "sec-ch-ua": "\"Chromium\";v=\"140\", \"Not=A?Brand\";v=\"24\", \"Google Chrome\";v=\"140\"",
     "sec-ch-ua-mobile": "?0",
-    "sec-ch-ua-platform": "\"macOS\""
+    "sec-ch-ua-platform": "\"Windows\""
   },
   "method": "GET",
-  "timestamp": "2025-10-16T07:16:11.045482",
+  "timestamp": "2025-10-16T09:49:24.873985",
   "success": true
 }

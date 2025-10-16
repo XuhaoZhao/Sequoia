@@ -195,10 +195,7 @@ class RealBrowserParamsFetcher:
                         request_url = request_data.get('request', {}).get('url', '')
 
                         # 检查URL是否包含'detail'或其他关键API端点
-                        if ('detail' in request_url.lower() or
-                            'api/qt/stock' in request_url.lower() or
-                            'push2.eastmoney.com' in request_url.lower()):
-
+                        if ('detail' in request_url.lower()):
                             request_info = {
                                 'url': request_url,
                                 'method': request_data.get('request', {}).get('method', 'GET'),

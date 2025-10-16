@@ -80,8 +80,8 @@ from data_collect.stock_chip_race import stock_chip_race_open,stock_chip_race_en
 # # uu.collect_realtime_1min_data(instrument_type='concept_sector')
 # uu.start_monitoring()
 
-# temp_df = stock_large_cap_filter()
-# print(temp_df)
+temp_df = stock_large_cap_filter(debug=True)
+print(temp_df)
 
 # 注意：该接口返回的数据只有最近一个交易日的有开盘价，其他日期开盘价为 0
 # stock_intraday_em_df = ak.stock_intraday_em(symbol="000977")
@@ -90,3 +90,4 @@ from data_collect.stock_chip_race import stock_chip_race_open,stock_chip_race_en
 
 # fund_etf_hist_min_em_df = ak.fund_etf_hist_min_em(symbol="515170", period="1", adjust="", start_date="2025-10-15 09:00:00", end_date="2026-03-20 17:40:00")
 # print(fund_etf_hist_min_em_df)
+
