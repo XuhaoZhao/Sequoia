@@ -1,7 +1,13 @@
 import akshare as ak
 from .financial_instruments import FinancialInstrument
 from .logger_config import log_method_call
-
+from financial_framework.file_path_generator import (
+    FilePathGenerator,
+    generate_etf_data_path,
+    generate_stock_data_path,
+    generate_industry_data_path,
+    generate_concept_data_path
+)
 
 class ETF(FinancialInstrument):
     """ETF类"""
@@ -17,8 +23,7 @@ class ETF(FinancialInstrument):
         """获取所有ETF列表"""
         try:
             self.log_info("开始获取所有ETF列表")
-            etf_df = ak.fund_etf_spot_em()
-            result = [{'code': row['代码'], 'name': row['名称']} for _, row in etf_df.iterrows()]
+            etf_path = generate_etf_data_path()
             self.log_info(f"成功获取{len(result)}个ETF")
             return result
         except Exception as e:

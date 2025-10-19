@@ -17,6 +17,8 @@ from datetime import datetime
 import requests
 import random
 import string
+import csv
+import os
 
 # 导入日志系统
 try:
@@ -49,7 +51,14 @@ class EastmoneySearchCodeInterceptor:
             logger_name='financial_framework.eastmoney_interceptor.browser'
         )
 
-        self.target_api_url = "https://np-tjxg-g.eastmoney.com/api/smart-tag/stock/v3/pw/search-code"
+              # API URL映射表
+        self.api_url_map = {
+            "stock": "https://np-tjxg-g.eastmoney.com/api/smart-tag/stock/v3/pw/search-code",
+            "etf": "https://np-tjxg-g.eastmoney.com/api/smart-tag/etf/v3/pw/search-code",
+            "fund": "https://np-tjxg-g.eastmoney.com/api/smart-tag/fund/v3/pw/search-code",
+            "bond": "https://np-tjxg-g.eastmoney.com/api/smart-tag/bond/v3/pw/search-code"
+        }
+        self.target_api_url = self.api_url_map.get("stock", self.api_url_map["stock"])  # 默认使用stock类型
         self.requested_pages = set()  # 用于跟踪已请求过的页码,避免重复请求
 
         # 日志控制参数
@@ -61,18 +70,27 @@ class EastmoneySearchCodeInterceptor:
         self.browser_manager.init_driver()
 
     def start_interception(self, xuangu_id="xc0d27d74884930004d1", color="w", action="edit_way",
-                          check_interval=1, refresh_interval=300):
+                          type="stock", check_interval=1, refresh_interval=300):
         """
         持续拦截 search-code API，每5分钟刷新页面
         :param xuangu_id: 选股方案ID
         :param color: 颜色参数
         :param action: 动作参数
+        :param type: 数据类型（默认："stock"）
         :param check_interval: 检查网络日志的时间间隔（秒）
         :param refresh_interval: 刷新页面的时间间隔（秒），默认300秒（5分钟）
         """
         try:
+            # 根据type设置正确的API URL
+            if type in self.api_url_map:
+                self.target_api_url = self.api_url_map[type]
+                self.logger.info(f"根据type={type}设置API URL: {self.target_api_url}")
+            else:
+                self.logger.warning(f"未知的type: {type}，使用默认的stock API URL")
+                self.target_api_url = self.api_url_map["stock"]
+
             # 构造目标URL
-            url = f"https://xuangu.eastmoney.com/Result?color={color}&id={xuangu_id}&a={action}"
+            url = f"https://xuangu.eastmoney.com/Result?type={type}&color={color}&id={xuangu_id}&a={action}"
 
             self.logger.info("=" * 80)
             self.logger.info(f"访问页面: {url}")
@@ -349,12 +367,13 @@ class EastmoneySearchCodeInterceptor:
         self.logger.debug(f"requestId随机化: {original_id[:20]}... → {new_id[:20]}...")
         return new_id
 
-    def _request_next_page(self, request_info, request_json, first_page_response=None):
+    def _request_next_page(self, request_info, request_json, first_page_response=None, type="stock"):
         """
         根据第一页的响应数据，自动请求所有分页并收集关键数据
         :param request_info: 原始请求信息
         :param request_json: 原始请求的JSON数据
         :param first_page_response: 第一页的响应数据（JSON格式）
+        :param type: 数据类型（默认："stock"）
         """
         try:
             # 避免重复请求
@@ -605,6 +624,452 @@ class EastmoneySearchCodeInterceptor:
         except Exception as e:
             self.logger.error(f"记录关键数据时发生错误: {e}", exc_info=True)
 
+    def intercept_and_save_to_csv(self, xuangu_id="xc0d27d74884930004d1", color="w", action="edit_way",
+                                 type="stock", check_interval=1, refresh_interval=10, csv_file_path="xuangu_data.csv",
+                                 max_refresh_attempts=5):
+        """
+        访问页面并间隔刷新获取选股数据，保存到CSV文件
+        首次拦截到的数据不要，第二次的才可以，如果得到数据就返回结束
+        如果没有数据，再间隔刷新最多3次，如果还是没有就停止运行
+        自动获取所有分页数据并合并保存
+
+        :param xuangu_id: 选股方案ID
+        :param color: 颜色参数
+        :param action: 动作参数
+        :param type: 数据类型（默认："stock"）
+        :param check_interval: 检查网络日志的时间间隔（秒）
+        :param refresh_interval: 刷新页面的时间间隔（秒）
+        :param csv_file_path: CSV文件保存路径
+        :param max_refresh_attempts: 最大刷新尝试次数（包含首次访问）
+        """
+        try:
+            # 根据type设置正确的API URL
+            if type in self.api_url_map:
+                self.target_api_url = self.api_url_map[type]
+                self.logger.info(f"根据type={type}设置API URL: {self.target_api_url}")
+            else:
+                self.logger.warning(f"未知的type: {type}，使用默认的stock API URL")
+                self.target_api_url = self.api_url_map["stock"]
+
+            # 构造目标URL
+            url = f"https://xuangu.eastmoney.com/Result?type={type}&color={color}&id={xuangu_id}&a={action}"
+
+            self.logger.info("=" * 80)
+            self.logger.info(f"访问页面: {url}")
+            self.logger.info(f"目标API: {self.target_api_url}")
+            self.logger.info(f"CSV文件路径: {csv_file_path}")
+            self.logger.info(f"最大刷新尝试次数: {max_refresh_attempts}")
+            self.logger.info(f"检查间隔: {check_interval}秒")
+            self.logger.info(f"刷新间隔: {refresh_interval}秒")
+            self.logger.info("=" * 80)
+
+            # 启用网络拦截
+            self.browser_manager.enable_network_interception()
+
+            # 访问页面
+            self.browser_manager.navigate_to(url)
+
+            # 用于跟踪已处理的request_id，避免重复处理
+            processed_request_ids = set()
+            # 存储请求信息，key为request_id
+            pending_requests = {}
+            intercept_count = 0
+            refresh_count = 0
+            valid_data_count = 0
+            last_refresh_time = time.time()  # 设置初始时间，确保首次刷新计时正确
+
+            self.logger.info("=" * 80)
+            self.logger.info("开始监听 search-code API，等待有效数据...")
+            self.logger.info("=" * 80)
+
+            # 持续监听，直到获取到有效数据或达到最大刷新次数
+            while refresh_count < max_refresh_attempts:
+                try:
+                    # 检查是否需要刷新页面
+                    current_time = time.time()
+                    if current_time - last_refresh_time >= refresh_interval:
+                        if refresh_count == 0:
+                            self.logger.info("首次访问完成，等待下次刷新...")
+                        else:
+                            self.logger.info("=" * 60)
+                            self.logger.info(f"第 {refresh_count + 1} 次刷新页面...")
+                            self.logger.info("=" * 60)
+
+                        self.browser_manager.refresh_page()
+                        last_refresh_time = current_time
+                        refresh_count += 1
+
+                        # 刷新后清空已处理的request_id，以便重新拦截
+                        processed_request_ids.clear()
+                        pending_requests.clear()
+                        self.requested_pages.clear()
+
+                    # 获取性能日志
+                    logs = self.browser_manager.get_performance_logs()
+
+                    for log in logs:
+                        message = json.loads(log['message'])
+                        method = message.get('message', {}).get('method', '')
+
+                        # 拦截请求发送，保存请求数据
+                        if method == 'Network.requestWillBeSent':
+                            params = message.get('message', {}).get('params', {})
+                            request = params.get('request', {})
+                            request_id = params.get('requestId', '')
+                            url_sent = request.get('url', '')
+
+                            # 只处理 search-code API 的请求
+                            if self.target_api_url in url_sent:
+                                pending_requests[request_id] = {
+                                    'request_url': url_sent,
+                                    'request_method': request.get('method', ''),
+                                    'request_headers': request.get('headers', {}),
+                                    'request_post_data': request.get('postData', None),
+                                    'request_time': datetime.now().isoformat()
+                                }
+
+                        # 查找网络响应
+                        if method == 'Network.responseReceived':
+                            params = message.get('message', {}).get('params', {})
+                            response = params.get('response', {})
+                            request_id = params.get('requestId', '')
+                            url_received = response.get('url', '')
+                            status = response.get('status', 0)
+                            mime_type = response.get('mimeType', '')
+
+                            # 只处理 search-code API
+                            if self.target_api_url in url_received and request_id not in processed_request_ids:
+                                processed_request_ids.add(request_id)
+
+                                # 尝试获取响应内容
+                                try:
+                                    body = self.browser_manager.get_response_body(request_id)
+
+                                    # 只处理有数据的响应（过滤流式响应中的空数据）
+                                    if body and len(body) > 10:  # 至少要有一些内容
+                                        intercept_count += 1
+                                        valid_data_count += 1
+
+                                        self.logger.info("=" * 80)
+                                        self.logger.info(f"✓ 拦截到第 {intercept_count} 个有效响应")
+                                        self.logger.info(f"有效数据计数: {valid_data_count}")
+                                        self.logger.info(f"URL: {url_received}")
+                                        self.logger.info(f"状态码: {status}")
+                                        self.logger.info(f"响应大小: {len(body)} 字符")
+                                        self.logger.info("=" * 80)
+
+                                        # 解析响应JSON
+                                        response_json = None
+                                        try:
+                                            response_json = json.loads(body)
+                                            if response_json and 'data' in response_json:
+                                                data = response_json.get('data', {})
+                                                result = data.get('result', {})
+                                                data_list = result.get('dataList', [])
+
+                                                self.logger.info(f"✓ 响应包含 {len(data_list)} 条选股数据")
+
+                                                # 检查数据有效性
+                                                if data_list and len(data_list) > 0:
+                                                    # 第一次数据不要，从第二次开始保存
+                                                    if valid_data_count >= 2:
+                                                        self.logger.info("✓ 这是第二次有效数据，开始请求所有分页并保存到CSV文件")
+
+                                                        # 获取请求信息用于分页请求
+                                                        if request_id in pending_requests:
+                                                            request_info = pending_requests[request_id]
+
+                                                            # 解析请求的postData
+                                                            request_json = None
+                                                            if request_info['request_post_data']:
+                                                                try:
+                                                                    request_json = json.loads(request_info['request_post_data'])
+                                                                except Exception as e:
+                                                                    self.logger.warning(f"解析请求数据失败: {e}")
+
+                                                            # 如果有请求数据，触发自动分页请求
+                                                            if request_json:
+                                                                self.logger.info("开始自动请求所有分页数据...")
+                                                                success = self._request_next_page_and_save_to_csv(
+                                                                    request_info, request_json, response_json, type, csv_file_path
+                                                                )
+
+                                                                if success:
+                                                                    self.logger.info("=" * 80)
+                                                                    self.logger.info("✓ 所有分页数据已成功保存到CSV文件，程序结束")
+                                                                    self.logger.info("=" * 80)
+                                                                    return True
+                                                                else:
+                                                                    self.logger.error("分页请求或保存失败")
+                                                            else:
+                                                                # 如果没有请求数据，直接保存当前页面数据
+                                                                self.logger.info("无请求数据，直接保存当前页面数据")
+                                                                success = self._save_data_to_csv(data_list, csv_file_path)
+                                                                if success:
+                                                                    self.logger.info("=" * 80)
+                                                                    self.logger.info("✓ 数据已成功保存到CSV文件，程序结束")
+                                                                    self.logger.info("=" * 80)
+                                                                    return True
+                                                                else:
+                                                                    self.logger.error("保存CSV文件失败")
+                                                        else:
+                                                            self.logger.warning("无法找到请求信息，无法进行分页请求")
+                                                            success = self._save_data_to_csv(data_list, csv_file_path)
+                                                            if success:
+                                                                self.logger.info("=" * 80)
+                                                                self.logger.info("✓ 数据已成功保存到CSV文件，程序结束")
+                                                                self.logger.info("=" * 80)
+                                                                return True
+                                                    else:
+                                                        self.logger.info(f"✓ 第 {valid_data_count} 次有效数据，跳过（需要第二次数据）")
+                                                        self.logger.info(f"将在 {refresh_interval} 秒后刷新页面获取新数据...")
+                                                else:
+                                                    self.logger.warning("响应数据为空或无效")
+
+                                        except Exception as e:
+                                            self.logger.warning(f"解析响应JSON失败: {e}")
+
+                                        # 清理已使用的请求信息
+                                        if request_id in pending_requests:
+                                            del pending_requests[request_id]
+
+                                except Exception as e:
+                                    # 获取响应体失败，可能是流式响应还没有数据
+                                    self.logger.debug(f"获取响应体失败: {e}")
+
+                    # 如果还没有获取到第二次有效数据，等待一段时间再检查
+                    if valid_data_count < 2:
+                        # 计算距离下次刷新的时间
+                        time_until_refresh = max(0, refresh_interval - (time.time() - last_refresh_time))
+                        sleep_time = min(check_interval, time_until_refresh)
+                        if sleep_time > 0:
+                            time.sleep(sleep_time)
+                    else:
+                        break  # 已经获取到第二次数据并保存成功
+
+                except KeyboardInterrupt:
+                    self.logger.info("用户手动停止程序")
+                    break
+
+            # 达到最大刷新次数仍未获取到有效数据
+            self.logger.info("=" * 80)
+            self.logger.info(f"已达到最大刷新次数 {max_refresh_attempts}，程序结束")
+            self.logger.info(f"总共拦截到 {intercept_count} 个响应")
+            self.logger.info(f"有效数据计数: {valid_data_count}")
+            if valid_data_count < 2:
+                self.logger.warning("未获取到足够的有效数据保存到CSV文件")
+            self.logger.info("=" * 80)
+            return False
+
+        except Exception as e:
+            self.logger.error(f"API拦截和保存失败: {e}", exc_info=True)
+            return False
+
+    def _save_data_to_csv(self, data_list, csv_file_path):
+        """
+        将选股数据保存到CSV文件
+        :param data_list: 选股数据列表
+        :param csv_file_path: CSV文件保存路径
+        :return: 保存是否成功
+        """
+        try:
+            if not data_list:
+                self.logger.warning("数据列表为空，无法保存到CSV文件")
+                return False
+
+            # 确保目录存在
+            os.makedirs(os.path.dirname(csv_file_path), exist_ok=True)
+
+            # 检查文件是否存在，如果不存在则创建并写入表头
+            file_exists = os.path.exists(csv_file_path)
+
+            with open(csv_file_path, 'a', newline='', encoding='utf-8-sig') as csvfile:
+                if data_list:
+                    # 获取第一条数据作为表头
+                    fieldnames = list(data_list[0].keys())
+                    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+
+                    # 如果文件不存在，写入表头
+                    if not file_exists:
+                        writer.writeheader()
+                        self.logger.info(f"创建新的CSV文件并写入表头: {csv_file_path}")
+
+                    # 写入数据
+                    writer.writerows(data_list)
+
+                    self.logger.info(f"✓ 成功写入 {len(data_list)} 条数据到CSV文件")
+                    self.logger.info(f"文件路径: {csv_file_path}")
+                    return True
+                else:
+                    self.logger.warning("没有数据可以写入CSV文件")
+                    return False
+
+        except Exception as e:
+            self.logger.error(f"保存数据到CSV文件失败: {e}", exc_info=True)
+            return False
+
+    def _request_next_page_and_save_to_csv(self, request_info, request_json, first_page_response=None, type="stock", csv_file_path="xuangu_data.csv"):
+        """
+        根据第一页的响应数据，自动请求所有分页并保存到CSV文件
+        :param request_info: 原始请求信息
+        :param request_json: 原始请求的JSON数据
+        :param first_page_response: 第一页的响应数据（JSON格式）
+        :param type: 数据类型（默认："stock"）
+        :param csv_file_path: CSV文件保存路径
+        :return: 保存是否成功
+        """
+        try:
+            # 避免重复请求
+            if hasattr(self, '_is_requesting_all_pages_csv') and self._is_requesting_all_pages_csv:
+                return False
+
+            self._is_requesting_all_pages_csv = True
+
+            # 解析第一页数据，获取total和dataList
+            if not first_page_response:
+                self.logger.warning("未提供第一页响应数据，无法请求后续分页")
+                return False
+
+            # 提取total和dataList
+            try:
+                data = first_page_response.get('data', {})
+                result = data.get('result', {})
+                total = result.get('total', 0)
+                first_page_data_list = result.get('dataList', [])
+
+                self.logger.info("=" * 80)
+                self.logger.info(f"第一页数据解析:")
+                self.logger.info(f"  总记录数(total): {total}")
+                self.logger.info(f"  第一页数据条数: {len(first_page_data_list)}")
+                self.logger.info("=" * 80)
+
+                if total == 0:
+                    self.logger.warning("总记录数为0，无需请求后续分页")
+                    return False
+
+                # 收集所有数据
+                all_data_list = first_page_data_list.copy()
+
+            except Exception as e:
+                self.logger.error(f"解析第一页响应数据失败: {e}", exc_info=True)
+                return False
+
+            # 计算总页数
+            page_size = request_json.get('pageSize', 50)
+            total_pages = (total + page_size - 1) // page_size  # 向上取整
+
+            self.logger.info(f"每页大小: {page_size}")
+            self.logger.info(f"计算总页数: {total_pages}")
+            self.logger.info("=" * 80)
+
+            # 如果只有一页，直接保存第一页数据
+            if total_pages <= 1:
+                self.logger.info("只有1页数据，直接保存第一页数据")
+                success = self._save_data_to_csv(all_data_list, csv_file_path)
+                return success
+
+            # 请求后续页面 (从第2页开始)
+            url = request_info['request_url']
+            headers = request_info['request_headers'].copy()
+            headers['Content-Type'] = 'application/json'
+
+            for page_no in range(2, total_pages + 1):
+                # 检查是否已请求过
+                if page_no in self.requested_pages:
+                    continue
+
+                self.requested_pages.add(page_no)
+
+                # 延时1秒，避免请求过快
+                self.logger.info(f"延时1秒后请求第{page_no}页...")
+                time.sleep(1)
+
+                # 复制请求数据
+                next_page_json = request_json.copy()
+
+                # 修改页码
+                if 'pageNo' in next_page_json:
+                    next_page_json['pageNo'] = page_no
+                elif 'pageNum' in next_page_json:
+                    next_page_json['pageNum'] = page_no
+                elif 'page' in next_page_json:
+                    next_page_json['page'] = page_no
+
+                # 随机化requestId，避免反爬
+                if 'requestId' in next_page_json:
+                    next_page_json['requestId'] = self._randomize_request_id(next_page_json['requestId'])
+
+                # 发起请求
+                self.logger.info(f"正在请求第{page_no}/{total_pages}页...")
+                self.logger.info(f"请求URL: {url}")
+
+                try:
+                    response = requests.post(
+                        url,
+                        json=next_page_json,
+                        headers=headers,
+                        timeout=30
+                    )
+
+                    if response.status_code == 200:
+                        self.logger.info(f"✓ 第{page_no}页请求成功! 状态码: {response.status_code}")
+                        self.logger.info(f"✓ 响应大小: {len(response.text)} 字符")
+
+                        # 解析响应数据
+                        try:
+                            page_response_json = response.json()
+                            page_data = page_response_json.get('data', {})
+                            page_result = page_data.get('result', {})
+                            page_data_list = page_result.get('dataList', [])
+
+                            self.logger.info(f"✓ 第{page_no}页数据条数: {len(page_data_list)}")
+
+                            # 收集数据
+                            all_data_list.extend(page_data_list)
+
+                        except Exception as e:
+                            self.logger.error(f"解析第{page_no}页响应数据失败: {e}", exc_info=True)
+                    else:
+                        self.logger.error(f"第{page_no}页请求失败! 状态码: {response.status_code}")
+                        self.logger.error(f"响应内容: {response.text[:200]}")
+
+                except Exception as e:
+                    self.logger.error(f"请求第{page_no}页时发生错误: {e}", exc_info=True)
+
+            # 所有页面请求完成，保存数据到CSV
+            self.logger.info("=" * 80)
+            self.logger.info("所有分页数据收集完成!")
+            self.logger.info(f"总记录数(total): {total}")
+            self.logger.info(f"实际收集到的数据条数: {len(all_data_list)}")
+            self.logger.info("=" * 80)
+
+            success = self._save_data_to_csv(all_data_list, csv_file_path)
+            if success:
+                self.logger.info("✓ 所有分页数据已成功保存到CSV文件")
+            return success
+
+        except Exception as e:
+            self.logger.error(f"请求所有分页时发生错误: {e}", exc_info=True)
+            return False
+        finally:
+            self._is_requesting_all_pages_csv = False
+
+    def add_api_type(self, type_name, api_url):
+        """
+        动态添加新的API类型
+        :param type_name: 类型名称
+        :param api_url: 对应的API URL
+        """
+        self.api_url_map[type_name] = api_url
+        self.logger.info(f"添加新的API类型: {type_name} -> {api_url}")
+
+    def get_available_types(self):
+        """
+        获取所有可用的API类型
+        :return: 可用类型列表
+        """
+        return list(self.api_url_map.keys())
+
     def close(self):
         """关闭浏览器"""
         self.browser_manager.close()
@@ -641,15 +1106,38 @@ def main():
         logger.error("浏览器初始化失败，退出程序")
         return
 
+    # 显示可用的API类型
+    available_types = interceptor.get_available_types()
+    logger.info(f"可用的API类型: {', '.join(available_types)}")
+
     try:
-        # 开始拦截，每5分钟刷新一次页面
-        interceptor.start_interception(
-            xuangu_id="xc0d291f999b33002095",
+        # 使用新的拦截并保存到CSV的函数
+        logger.info("使用 intercept_and_save_to_csv 函数获取数据并保存到CSV")
+        success = interceptor.intercept_and_save_to_csv(
+            xuangu_id="xc0d3858a90493012efd",
             color="w",
             action="edit_way",
-            check_interval=1,  # 每1秒检查一次网络日志
-            refresh_interval=100  # 每100秒刷新一次页面 (可根据需要调整为300秒即5分钟)
+            type="stock",               # 数据类型
+            check_interval=1,           # 每1秒检查一次网络日志
+            refresh_interval=10,        # 每10秒刷新一次页面
+            csv_file_path="data/xuangu_data.csv",  # CSV文件保存路径
+            max_refresh_attempts=5      # 最大刷新尝试次数
         )
+
+        if success:
+            logger.info("✓ 数据获取和保存成功")
+        else:
+            logger.warning("✗ 数据获取和保存失败或未获取到足够数据")
+
+        # 如果需要使用传统的持续监听模式，可以取消注释下面的代码
+        # logger.info("使用传统的持续监听模式")
+        # interceptor.start_interception(
+        #     xuangu_id="xc0d291f999b33002095",
+        #     color="w",
+        #     action="edit_way",
+        #     check_interval=1,  # 每1秒检查一次网络日志
+        #     refresh_interval=100  # 每100秒刷新一次页面 (可根据需要调整为300秒即5分钟)
+        # )
 
     except KeyboardInterrupt:
         logger.info("用户手动停止程序")
