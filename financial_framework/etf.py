@@ -8,7 +8,7 @@ from financial_framework.file_path_generator import (
     generate_industry_data_path,
     generate_concept_data_path
 )
-
+import pandas as pd
 class ETF(FinancialInstrument):
     """ETF类"""
 
@@ -22,8 +22,24 @@ class ETF(FinancialInstrument):
     def get_all_instruments(self):
         """获取所有ETF列表"""
         try:
+            
             self.log_info("开始获取所有ETF列表")
+            # 获取ETF数据文件路径
             etf_path = generate_etf_data_path()
+            self.log_info(f"读取ETF数据文件: {etf_path}")
+
+            # 读取CSV文件
+            df = pd.read_csv(etf_path)
+
+            # 从CSV文件中获取股票名称和代码
+            result = []
+            for _, row in df.iterrows():
+                etf_info = {
+                    'code': str(row['SECURITY_CODE']),
+                    'name': str(row['SECURITY_SHORT_NAME'])
+                }
+                result.append(etf_info)
+
             self.log_info(f"成功获取{len(result)}个ETF")
             return result
         except Exception as e:

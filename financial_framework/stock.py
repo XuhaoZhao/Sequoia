@@ -4,6 +4,9 @@ from datetime import datetime
 from .financial_instruments import FinancialInstrument
 from .logger_config import log_data_operation, log_method_call
 from data_collect.stock_chip_race import stock_large_cap_filter
+from financial_framework.file_path_generator import (
+    generate_stock_data_path
+)
 
 
 class Stock(FinancialInstrument):
@@ -20,8 +23,22 @@ class Stock(FinancialInstrument):
         """获取所有股票列表"""
         try:
             self.log_info("开始获取所有股票列表")
-            stocks_df = stock_large_cap_filter()
-            result = [{'code': row['代码'], 'name': row['名称']} for _, row in stocks_df.iterrows()]
+            # 获取股票数据文件路径
+            stock_path = generate_stock_data_path()
+            self.log_info(f"读取股票数据文件: {stock_path}")
+
+            # 读取CSV文件
+            df = pd.read_csv(stock_path)
+
+            # 从CSV文件中获取股票名称和代码
+            result = []
+            for _, row in df.iterrows():
+                stock_info = {
+                    'code': str(row['SECURITY_CODE']),
+                    'name': str(row['SECURITY_SHORT_NAME'])
+                }
+                result.append(stock_info)
+
             self.log_info(f"成功获取{len(result)}个股票")
             return result
         except Exception as e:
