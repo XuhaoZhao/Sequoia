@@ -322,60 +322,54 @@ class FinancialInstrument(ABC, LoggerMixin):
         return signals
     
     def analyze_macd(self, instrument_info):
-        """分析MACD"""
-        base_data = self.combine_historical_and_realtime(instrument_info)
+        """分析30分钟级别MACD，接收已经处理好的30分钟数据"""
+        code = instrument_info.get('code', self.code)
         name = instrument_info.get('name', self.name)
-        
-        if base_data is None or len(base_data) < 26:
-            print(f"{name}: 数据不足，无法计算MACD")
+
+        # 从数据库获取30分钟数据
+        data_30m = self.db.query_kline_data('30m', code=code)
+
+        if data_30m is None or len(data_30m) < 26:
+            print(f"{name}: 30分钟数据不足，无法计算MACD")
             return
-        
-        results = {}
-        periods = {
-            '5分钟': '5T',
-            '15分钟': '15T', 
-            '30分钟': '30T',
-            '60分钟': '60T'
-        }
-        
-        for period_name, period_code in periods.items():
-            if period_name == '5分钟':
-                period_data = base_data
-            else:
-                period_data = self.resample_data(base_data, period_code)
-            
-            if period_data is None or len(period_data) < 26:
-                continue
-            
-            close_prices = period_data['收盘']
-            macd_line, signal_line, histogram = self.calculate_macd(close_prices, 5, 13, 5)
-            
-            if macd_line is not None:
-                signals = self.detect_macd_signals(macd_line, signal_line)
-                
-                if signals:
-                    results[period_name] = []
-                    for signal in signals:
-                        timestamp = period_data.iloc[signal['index']]['日期时间']
-                        results[period_name].append({
-                            'time': timestamp,
-                            'type': signal['type'],
-                            'macd': signal['macd'],
-                            'signal': signal['signal']
-                        })
-        
-        if results:
-            today = datetime.now().strftime('%Y-%m-%d')
-            
-            print(f"\n{name} 当天MACD金叉信号:")
-            for period, signals in results.items():
-                if period in ['30分钟', '60分钟']:
-                    today_signals = [s for s in signals if s['time'].strftime('%Y-%m-%d') == today and s['type'] == '金叉']
-                    if today_signals:
-                        print(f"  {period}:")
-                        for signal in today_signals: 
-                            message = f"{name} {period}MACD{signal['type']}信号\n时间: {signal['time']}\nMACD: {signal['macd']:.4f}\nSignal: {signal['signal']:.4f}"
-                            print(message)
+
+        # 重命名列以匹配计算所需格式
+        data_30m = data_30m.rename(columns={
+            'datetime': '日期时间',
+            'close_price': '收盘'
+        })
+        data_30m['日期时间'] = pd.to_datetime(data_30m['日期时间'])
+
+        close_prices = data_30m['收盘']
+        macd_line, signal_line, _ = self.calculate_macd(close_prices, 5, 13, 5)
+
+        if macd_line is None:
+            return
+
+        signals = self.detect_macd_signals(macd_line, signal_line)
+
+        if not signals:
+            return
+
+        # 筛选当天的金叉信号
+        today = datetime.now().strftime('%Y-%m-%d')
+        today_golden_cross_signals = []
+
+        for signal in signals:
+            timestamp = data_30m.iloc[signal['index']]['日期时间']
+            if timestamp.strftime('%Y-%m-%d') == today and signal['type'] == '金叉':
+                today_golden_cross_signals.append({
+                    'time': timestamp,
+                    'type': signal['type'],
+                    'macd': signal['macd'],
+                    'signal': signal['signal']
+                })
+
+        if today_golden_cross_signals:
+            print(f"\n{name} 当天30分钟MACD金叉信号:")
+            for signal in today_golden_cross_signals:
+                message = f"{name} 30分钟MACD{signal['type']}信号\n时间: {signal['time']}\nMACD: {signal['macd']:.4f}\nSignal: {signal['signal']:.4f}"
+                print(message)
     
     def _is_trading_time(self, check_time=None):
         """检查是否在A股交易时间内"""
