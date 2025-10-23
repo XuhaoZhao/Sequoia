@@ -1,7 +1,7 @@
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from .industry_sector import IndustrySector
 from .stock import Stock
 from .etf import ETF
@@ -14,6 +14,9 @@ import settings
 import push
 import pandas as pd
 import os
+import akshare as ak
+import talib
+import numpy as np
 
 
 class UnifiedDataCollector(LoggerMixin):
@@ -335,6 +338,685 @@ class UnifiedAnalyzer:
         print("开始统一分析...")
         self.analyze_all_instruments(instrument_type)
         print("统一分析完成")
+
+
+class TechnicalAnalyzer:
+    """
+    技术分析类（从 industry_daliyK_analysis.py 整合）
+    提供综合技术分析功能，包括：
+    - ZigZag分析
+    - 分形分析
+    - 斐波那契回撤
+    - 布林带分析
+    - 移动平均线分析
+    - 转折点检测
+    """
+
+    def __init__(self, db=None, default_symbol="人形机器人", default_days_back=250, default_data_source="industry"):
+        """
+        初始化分析器
+
+        Args:
+            db: IndustryDataDB 数据库实例（依赖注入），如果为None则创建新实例
+            default_symbol: 默认分析的板块名称或股票代码
+            default_days_back: 默认分析天数
+            default_data_source: 默认数据来源 ("industry", "stock", "concept")
+        """
+        # 初始化数据库实例（依赖注入）
+        self.db = db if db is not None else IndustryDataDB("industry_data.db")
+        self.default_symbol = default_symbol
+        self.default_days_back = default_days_back
+        self.default_data_source = default_data_source
+
+    def zigzag(self, high, low, close, deviation=0.05):
+        """
+        ZigZag算法识别高低点
+
+        Args:
+            high, low, close: 价格数组
+            deviation: 最小变化幅度（默认5%）
+
+        Returns:
+            list: [(index, price, type)] type为'high'或'low'
+        """
+        peaks = []
+        if len(close) < 3:
+            return peaks
+
+        trend = None
+        last_peak_idx = 0
+        last_peak_price = close[0]
+
+        for i in range(1, len(close)):
+            if trend is None:
+                if close[i] > close[i-1] * (1 + deviation):
+                    trend = 'up'
+                    last_peak_idx = i-1
+                    last_peak_price = close[i-1]
+                    peaks.append((i-1, close[i-1], 'low'))
+                elif close[i] < close[i-1] * (1 - deviation):
+                    trend = 'down'
+                    last_peak_idx = i-1
+                    last_peak_price = close[i-1]
+                    peaks.append((i-1, close[i-1], 'high'))
+
+            elif trend == 'up':
+                if close[i] > last_peak_price:
+                    last_peak_idx = i
+                    last_peak_price = close[i]
+                elif close[i] < last_peak_price * (1 - deviation):
+                    peaks.append((last_peak_idx, last_peak_price, 'high'))
+                    trend = 'down'
+                    last_peak_idx = i
+                    last_peak_price = close[i]
+
+            elif trend == 'down':
+                if close[i] < last_peak_price:
+                    last_peak_idx = i
+                    last_peak_price = close[i]
+                elif close[i] > last_peak_price * (1 + deviation):
+                    peaks.append((last_peak_idx, last_peak_price, 'low'))
+                    trend = 'up'
+                    last_peak_idx = i
+                    last_peak_price = close[i]
+
+        if trend and len(peaks) > 0:
+            peaks.append((last_peak_idx, last_peak_price, 'high' if trend == 'up' else 'low'))
+
+        return peaks
+
+
+    def fractal_highs_lows(self, high, low, period=2):
+        """
+        分形算法识别局部高低点
+
+        Args:
+            high, low: 价格数组
+            period: 分形周期（默认2，即前后2个点）
+
+        Returns:
+            dict: {'highs': [(index, price)], 'lows': [(index, price)]}
+        """
+        fractal_highs = []
+        fractal_lows = []
+
+        for i in range(period, len(high) - period):
+            is_high = True
+            is_low = True
+
+            for j in range(i - period, i + period + 1):
+                if j == i:
+                    continue
+                if high[j] >= high[i]:
+                    is_high = False
+                if low[j] <= low[i]:
+                    is_low = False
+
+            if is_high:
+                fractal_highs.append((i, high[i]))
+            if is_low:
+                fractal_lows.append((i, low[i]))
+
+        return {'highs': fractal_highs, 'lows': fractal_lows}
+
+
+    def fibonacci_retracement(self, high_price, low_price):
+        """
+        计算斐波那契回撤位
+
+        Args:
+            high_price: 高点价格
+            low_price: 低点价格
+
+        Returns:
+            dict: 各个斐波那契回撤位
+        """
+        price_range = high_price - low_price
+
+        fib_levels = {
+            '0%': high_price,
+            '23.6%': high_price - price_range * 0.236,
+            '38.2%': high_price - price_range * 0.382,
+            '50%': high_price - price_range * 0.5,
+            '61.8%': high_price - price_range * 0.618,
+            '78.6%': high_price - price_range * 0.786,
+            '100%': low_price
+        }
+
+        return fib_levels
+
+
+    def analyze_comprehensive_technical(self, code=None, symbol=None, days_back=None, data_source=None):
+        """
+        综合技术分析：布林带 + 斐波那契回撤 + ZigZag + 分形
+
+        Args:
+            code: 板块代码或股票代码（优先使用）
+            symbol: 板块名称或股票代码（当code为None时使用，默认使用实例化时的默认值）
+            days_back: 分析天数（默认使用实例化时的默认值）
+            data_source: 数据来源，可选值：
+                - "industry": 行业板块数据
+                - "stock": 个股数据
+                - "concept": 概念板块数据
+                （默认使用实例化时的默认值）
+
+        Returns:
+            dict: 包含所有技术分析结果的字典
+        """
+        # 参数处理
+        if code is None and symbol is None:
+            symbol = self.default_symbol
+        if days_back is None:
+            days_back = self.default_days_back
+        if data_source is None:
+            data_source = self.default_data_source
+
+        # 计算日期范围
+        end_date = datetime.now().strftime("%Y-%m-%d")
+        start_date = (datetime.now() - timedelta(days=days_back)).strftime("%Y-%m-%d")
+
+        # 从数据库获取日K数据
+        try:
+            # 如果提供了code，直接使用code查询
+            query_code = code if code is not None else symbol
+
+            # 从数据库查询日K数据
+            df = self.db.query_kline_data('1d', code=query_code, start_date=start_date, end_date=end_date)
+
+            if df is None or df.empty:
+                return {"error": f"无法从数据库获取日K数据，code/symbol: {query_code}"}
+
+            # 重命名列以匹配后续处理
+            df = df.rename(columns={
+                'datetime': '日期',
+                'open_price': '开盘',
+                'high_price': '最高',
+                'low_price': '最低',
+                'close_price': '收盘',
+                'volume': '成交量'
+            })
+
+            # 转换日期格式
+            df['日期'] = pd.to_datetime(df['日期'])
+
+        except Exception as e:
+            return {"error": f"获取数据库日K数据失败: {str(e)}"}
+
+        df = df.sort_values('日期').reset_index(drop=True)
+
+        high_prices = df['最高'].values.astype(float)
+        low_prices = df['最低'].values.astype(float)
+        close_prices = df['收盘'].values.astype(float)
+        volumes = df['成交量'].values.astype(float)
+
+        upper_band, middle_band, lower_band = talib.BBANDS(
+            close_prices,
+            timeperiod=20,
+            nbdevup=2,
+            nbdevdn=2,
+            matype=0
+        )
+
+        df['上轨'] = upper_band
+        df['中轨'] = middle_band
+        df['下轨'] = lower_band
+
+        ma_data = self.calculate_moving_averages(close_prices)
+        for ma_name, ma_values in ma_data.items():
+            df[ma_name] = ma_values
+
+        # 计算成交量分析
+        volume_analysis = self.analyze_volume_status(volumes, lookback_days=60)
+
+        zigzag_points = self.zigzag(high_prices, low_prices, close_prices, deviation=0.08)
+
+        fractals = self.fractal_highs_lows(high_prices, low_prices, period=3)
+
+        latest_data = df.iloc[-1]
+        latest_close = float(latest_data['收盘'])
+        latest_lower_band = float(latest_data['下轨'])
+        latest_middle_band = float(latest_data['中轨'])
+        latest_upper_band = float(latest_data['上轨'])
+
+        ma_arrangement = self.analyze_ma_arrangement(ma_data, latest_close)
+        crossover_signals = self.detect_ma_crossover_signals(ma_data, lookback=5)
+        turning_points = self.detect_turning_points(close_prices, ma_data, latest_close)
+
+        bb_is_oversold = latest_close < latest_lower_band
+
+        distance_to_lower = ((latest_close - latest_lower_band) / latest_lower_band) * 100
+        bb_position = ((latest_close - latest_lower_band) / (latest_upper_band - latest_lower_band)) * 100
+
+        recent_highs = [point for point in zigzag_points if point[2] == 'high'][-3:]
+        recent_lows = [point for point in zigzag_points if point[2] == 'low'][-3:]
+
+        fib_analysis = {}
+        if recent_highs and recent_lows:
+            last_high = max(recent_highs, key=lambda x: x[1])
+            last_low = min(recent_lows, key=lambda x: x[1])
+
+            if last_high[0] > last_low[0]:
+                swing_high = last_high[1]
+                swing_low = last_low[1]
+                fib_levels = self.fibonacci_retracement(swing_high, swing_low)
+
+                fib_support_levels = []
+                for level, price in fib_levels.items():
+                    if abs(latest_close - price) / price < 0.02:
+                        fib_support_levels.append(level)
+
+                fib_analysis = {
+                    "摆动高点": swing_high,
+                    "摆动低点": swing_low,
+                    "斐波那契回撤位": fib_levels,
+                    "当前位置接近的回撤位": fib_support_levels,
+                    "回撤百分比": ((swing_high - latest_close) / (swing_high - swing_low)) * 100 if swing_high != swing_low else 0
+                }
+
+        fractal_recent_highs = fractals['highs'][-5:] if len(fractals['highs']) >= 5 else fractals['highs']
+        fractal_recent_lows = fractals['lows'][-5:] if len(fractals['lows']) >= 5 else fractals['lows']
+
+        综合分析信号 = []
+
+        if bb_is_oversold:
+            综合分析信号.append("布林带下轨超跌")
+
+        if bb_position < 20:
+            综合分析信号.append("布林带底部区域")
+
+        if fib_analysis.get("回撤百分比", 0) > 50:
+            综合分析信号.append("斐波那契深度回撤")
+
+        if fib_analysis.get("当前位置接近的回撤位"):
+            综合分析信号.append(f"接近斐波那契支撑位: {', '.join(fib_analysis['当前位置接近的回撤位'])}")
+
+        if len(recent_lows) > 0:
+            last_zigzag_low = min(recent_lows, key=lambda x: x[1])[1]
+            if latest_close <= last_zigzag_low * 1.05:
+                综合分析信号.append("接近ZigZag关键低点")
+
+        if len(fractal_recent_lows) > 0:
+            last_fractal_low = min(fractal_recent_lows, key=lambda x: x[1])[1]
+            if latest_close <= last_fractal_low * 1.03:
+                综合分析信号.append("接近分形关键低点")
+
+        if ma_arrangement["排列状态"] in ["完美多头排列", "多头排列"]:
+            综合分析信号.append(f"均线呈{ma_arrangement['排列状态']}")
+        elif ma_arrangement["排列状态"] in ["完美空头排列", "空头排列"]:
+            综合分析信号.append(f"均线呈{ma_arrangement['排列状态']}")
+
+        for signal in crossover_signals:
+            if signal["天数前"] <= 3:
+                综合分析信号.append(f"{signal['天数前']}天前{signal['快线']}{signal['类型']}{signal['慢线']}")
+
+        if turning_points["综合判断"] == "关键转折点":
+            综合分析信号.append("检测到关键转折点信号")
+
+        # 添加成交量相关的分析信号
+        if "error" not in volume_analysis:
+            if volume_analysis["成交量状态"] == "极低":
+                综合分析信号.append(f"成交量处于{volume_analysis['成交量百分位']:.1f}分位，极度萎缩")
+            elif volume_analysis["成交量状态"] == "低":
+                综合分析信号.append(f"成交量处于{volume_analysis['成交量百分位']:.1f}分位，明显萎缩")
+
+            if volume_analysis["成交量趋势"] in ["明显放量", "放量"] and volume_analysis["成交量等级"] <= 2:
+                综合分析信号.append(f"底部区域出现{volume_analysis['成交量趋势']}({volume_analysis['成交量变化率']:+.1f}%)")
+
+        综合评级 = "强烈超跌" if len(综合分析信号) >= 3 else "可能超跌" if len(综合分析信号) >= 2 else "观望" if len(综合分析信号) >= 1 else "正常"
+
+        return {
+            "板块名称": query_code,
+            "最新日期": latest_data['日期'],
+            "最新收盘价": latest_close,
+
+            "均线分析": ma_arrangement,
+
+            "均线交叉信号": crossover_signals,
+
+            "转折点分析": turning_points,
+
+            "成交量分析": volume_analysis,
+
+            "布林带分析": {
+                "上轨": latest_upper_band,
+                "中轨": latest_middle_band,
+                "下轨": latest_lower_band,
+                "是否超跌": bb_is_oversold,
+                "距离下轨百分比": round(distance_to_lower, 2),
+                "布林带位置": round(bb_position, 2)
+            },
+
+            "ZigZag分析": {
+                "最近高点": recent_highs,
+                "最近低点": recent_lows,
+                "关键点数量": len(zigzag_points)
+            },
+
+            "分形分析": {
+                "分形高点": fractal_recent_highs,
+                "分形低点": fractal_recent_lows
+            },
+
+            "斐波那契分析": fib_analysis,
+
+            "综合分析信号": 综合分析信号,
+            "综合评级": 综合评级,
+            "投资建议": self.get_investment_advice(综合评级, len(综合分析信号))
+        }
+
+
+    def calculate_moving_averages(self, prices, periods=[5, 10, 20, 30, 60]):
+        """
+        计算多周期移动平均线
+
+        Args:
+            prices: 价格序列
+            periods: 均线周期列表
+
+        Returns:
+            dict: 各周期均线数据
+        """
+        ma_data = {}
+        for period in periods:
+            ma_data[f'MA{period}'] = talib.SMA(prices, timeperiod=period)
+        return ma_data
+
+
+    def analyze_ma_arrangement(self, ma_data, current_price):
+        """
+        分析均线排列状态
+
+        Args:
+            ma_data: 均线数据字典
+            current_price: 当前价格
+
+        Returns:
+            dict: 排列分析结果
+        """
+        periods = [5, 10, 20, 30, 60]
+        ma_values = []
+
+        for period in periods:
+            ma_key = f'MA{period}'
+            if ma_key in ma_data and not np.isnan(ma_data[ma_key][-1]):
+                ma_values.append((period, ma_data[ma_key][-1]))
+
+        if len(ma_values) < 3:
+            return {"排列状态": "数据不足", "信号强度": 0}
+
+        ma_values_only = [value for _, value in ma_values]
+
+        is_bullish = all(ma_values_only[i] >= ma_values_only[i+1] for i in range(len(ma_values_only)-1))
+        is_bearish = all(ma_values_only[i] <= ma_values_only[i+1] for i in range(len(ma_values_only)-1))
+
+        price_above_all = current_price > max(ma_values_only)
+        price_below_all = current_price < min(ma_values_only)
+
+        if is_bullish and price_above_all:
+            arrangement = "完美多头排列"
+            signal_strength = 5
+        elif is_bullish:
+            arrangement = "多头排列"
+            signal_strength = 4
+        elif is_bearish and price_below_all:
+            arrangement = "完美空头排列"
+            signal_strength = -5
+        elif is_bearish:
+            arrangement = "空头排列"
+            signal_strength = -4
+        else:
+            arrangement = "混乱排列"
+            signal_strength = 0
+
+        return {
+            "排列状态": arrangement,
+            "信号强度": signal_strength,
+            "价格位置": "多头" if current_price > ma_values_only[0] else "空头",
+            "均线数值": {f'MA{period}': round(value, 2) for period, value in ma_values}
+        }
+
+
+    def detect_ma_crossover_signals(self, ma_data, lookback=5):
+        """
+        检测均线交叉信号
+
+        Args:
+            ma_data: 均线数据字典
+            lookback: 回看天数
+
+        Returns:
+            list: 交叉信号列表
+        """
+        signals = []
+        periods = [5, 10, 20, 30, 60]
+
+        for i in range(len(periods)):
+            for j in range(i+1, len(periods)):
+                fast_period = periods[i]
+                slow_period = periods[j]
+
+                fast_ma = ma_data[f'MA{fast_period}']
+                slow_ma = ma_data[f'MA{slow_period}']
+
+                if len(fast_ma) < lookback or len(slow_ma) < lookback:
+                    continue
+
+                for k in range(1, min(lookback, len(fast_ma))):
+                    if (fast_ma[-k-1] <= slow_ma[-k-1] and fast_ma[-k] > slow_ma[-k]):
+                        signals.append({
+                            "类型": "金叉",
+                            "快线": f"MA{fast_period}",
+                            "慢线": f"MA{slow_period}",
+                            "发生位置": len(fast_ma) - k,
+                            "天数前": k,
+                            "信号强度": "强" if fast_period <= 10 and slow_period >= 20 else "中"
+                        })
+                    elif (fast_ma[-k-1] >= slow_ma[-k-1] and fast_ma[-k] < slow_ma[-k]):
+                        signals.append({
+                            "类型": "死叉",
+                            "快线": f"MA{fast_period}",
+                            "慢线": f"MA{slow_period}",
+                            "发生位置": len(fast_ma) - k,
+                            "天数前": k,
+                            "信号强度": "强" if fast_period <= 10 and slow_period >= 20 else "中"
+                        })
+
+        return sorted(signals, key=lambda x: x["天数前"])
+
+
+    def detect_turning_points(self, prices, ma_data, current_price):
+        """
+        检测潜在转折点
+
+        Args:
+            prices: 价格序列
+            ma_data: 均线数据
+            current_price: 当前价格
+
+        Returns:
+            dict: 转折点分析结果
+        """
+        signals = []
+
+        ma5 = ma_data.get('MA5', [])
+        ma10 = ma_data.get('MA10', [])
+        ma20 = ma_data.get('MA20', [])
+
+        if len(ma5) < 3 or len(ma10) < 3 or len(ma20) < 3:
+            return {"转折信号": [], "综合判断": "数据不足"}
+
+        ma5_slope = (ma5[-1] - ma5[-3]) / 2
+        ma10_slope = (ma10[-1] - ma10[-3]) / 2
+        ma20_slope = (ma20[-1] - ma20[-3]) / 2
+
+        if ma5_slope > 0 and ma10_slope > 0 and current_price > ma5[-1]:
+            if ma20_slope <= 0:
+                signals.append("短期均线向上，可能形成底部")
+            else:
+                signals.append("多均线向上，上升趋势确认")
+
+        if ma5_slope < 0 and ma10_slope < 0 and current_price < ma5[-1]:
+            if ma20_slope >= 0:
+                signals.append("短期均线向下，可能形成顶部")
+            else:
+                signals.append("多均线向下，下降趋势确认")
+
+        price_volatility = np.std(prices[-10:]) / np.mean(prices[-10:])
+        if price_volatility > 0.05:
+            signals.append("价格波动加剧，注意趋势转换")
+
+        ma_convergence = abs(ma5[-1] - ma20[-1]) / ma20[-1]
+        if ma_convergence < 0.02:
+            signals.append("均线收敛，关注突破方向")
+
+        if len(signals) >= 2:
+            trend_judgment = "关键转折点"
+        elif len(signals) == 1:
+            trend_judgment = "潜在转折"
+        else:
+            trend_judgment = "趋势延续"
+
+        return {
+            "转折信号": signals,
+            "综合判断": trend_judgment,
+            "均线斜率": {
+                "MA5斜率": round(ma5_slope, 4),
+                "MA10斜率": round(ma10_slope, 4),
+                "MA20斜率": round(ma20_slope, 4)
+            }
+        }
+
+
+    def calculate_volume_ma(self, volumes, periods=[5, 10, 20]):
+        """
+        计算成交量移动平均线
+
+        Args:
+            volumes: 成交量序列
+            periods: 均线周期列表，默认[5, 10, 20]
+
+        Returns:
+            dict: 各周期成交量均线数据
+        """
+        volume_ma_data = {}
+        for period in periods:
+            volume_ma_data[f'VMA{period}'] = talib.SMA(volumes, timeperiod=period)
+        return volume_ma_data
+
+
+    def analyze_volume_status(self, volumes, lookback_days=60):
+        """
+        分析成交量状态，判断当前5日成交量均线是处于低点还是高点
+
+        Args:
+            volumes: 成交量序列
+            lookback_days: 回看天数，用于判断高低点，默认60天
+
+        Returns:
+            dict: 成交量分析结果，包含：
+                - current_vma5: 当前5日成交量均线
+                - vma5_percentile: 5日成交量均线在回看期内的百分位
+                - volume_status: 成交量状态（极低、低、中等、高、极高）
+                - volume_trend: 成交量趋势（放量、缩量、平稳）
+                - max_vma5: 回看期内5日均线最大值
+                - min_vma5: 回看期内5日均线最小值
+        """
+        if len(volumes) < 5:
+            return {"error": "数据不足，无法计算5日成交量均线"}
+
+        # 计算5日成交量均线
+        vma5 = talib.SMA(volumes, timeperiod=5)
+
+        if len(vma5) < lookback_days:
+            lookback_days = len(vma5)
+
+        # 获取回看期内的数据
+        recent_vma5 = vma5[-lookback_days:]
+        current_vma5 = vma5[-1]
+
+        # 去除NaN值
+        valid_vma5 = recent_vma5[~np.isnan(recent_vma5)]
+
+        if len(valid_vma5) == 0:
+            return {"error": "有效数据不足"}
+
+        # 计算统计指标
+        max_vma5 = np.max(valid_vma5)
+        min_vma5 = np.min(valid_vma5)
+        mean_vma5 = np.mean(valid_vma5)
+        std_vma5 = np.std(valid_vma5)
+
+        # 计算当前值的百分位（在回看期内的位置）
+        percentile = np.sum(valid_vma5 <= current_vma5) / len(valid_vma5) * 100
+
+        # 判断成交量状态
+        if percentile <= 20:
+            volume_status = "极低"
+            volume_level = 1
+        elif percentile <= 40:
+            volume_status = "低"
+            volume_level = 2
+        elif percentile <= 60:
+            volume_status = "中等"
+            volume_level = 3
+        elif percentile <= 80:
+            volume_status = "高"
+            volume_level = 4
+        else:
+            volume_status = "极高"
+            volume_level = 5
+
+        # 分析成交量趋势（对比前一个5日均线）
+        if len(vma5) >= 2 and not np.isnan(vma5[-2]):
+            prev_vma5 = vma5[-2]
+            volume_change_pct = ((current_vma5 - prev_vma5) / prev_vma5) * 100
+
+            if volume_change_pct > 10:
+                volume_trend = "明显放量"
+            elif volume_change_pct > 3:
+                volume_trend = "放量"
+            elif volume_change_pct < -10:
+                volume_trend = "明显缩量"
+            elif volume_change_pct < -3:
+                volume_trend = "缩量"
+            else:
+                volume_trend = "平稳"
+        else:
+            volume_change_pct = 0
+            volume_trend = "平稳"
+
+        # 计算与均值的偏离程度
+        if std_vma5 > 0:
+            z_score = (current_vma5 - mean_vma5) / std_vma5
+        else:
+            z_score = 0
+
+        return {
+            "当前5日成交量均线": round(current_vma5, 2),
+            "成交量百分位": round(percentile, 2),
+            "成交量状态": volume_status,
+            "成交量等级": volume_level,  # 1-5，数字越大成交量越高
+            "成交量趋势": volume_trend,
+            "成交量变化率": round(volume_change_pct, 2),
+            "回看期最大值": round(max_vma5, 2),
+            "回看期最小值": round(min_vma5, 2),
+            "回看期均值": round(mean_vma5, 2),
+            "Z分数": round(z_score, 2),  # 标准分数，反映偏离均值的程度
+            "距离最高点": round(((max_vma5 - current_vma5) / max_vma5) * 100, 2),
+            "距离最低点": round(((current_vma5 - min_vma5) / min_vma5) * 100, 2),
+        }
+
+
+    def get_investment_advice(self, rating, signal_count):
+        """根据综合评级给出投资建议"""
+        if rating == "强烈超跌":
+            return "🔥 多重技术指标显示强烈超跌，可考虑分批建仓，但需注意风险控制"
+        elif rating == "可能超跌":
+            return "⚠️ 技术指标显示可能超跌，可小量试探建仓，密切关注后续走势"
+        elif rating == "观望":
+            return "👀 部分技术指标显示调整，建议观望等待更好机会"
+        else:
+            return "✅ 技术指标相对正常，可按既定策略操作"
 
 
 # 兼容性类，保持原有接口
