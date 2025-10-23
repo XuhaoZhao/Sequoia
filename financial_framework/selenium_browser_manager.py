@@ -83,12 +83,21 @@ class SeleniumBrowserManager:
                 # 递归查找 chromedriver 可执行文件
                 for root, _, files in os.walk(cache_path):
                     for file in files:
-                        if file.startswith('chromedriver'):
-                            driver_path = os.path.join(root, file)
-                            # 验证是否可执行
-                            if os.access(driver_path, os.X_OK):
-                                self.logger.info(f"找到本地ChromeDriver: {driver_path}")
-                                return driver_path
+                        # Windows: 必须是 chromedriver.exe，跳过 .zip 文件
+                        # macOS/Linux: chromedriver (无扩展名)
+                        if system_name == 'Windows':
+                            if file.lower() == 'chromedriver.exe':
+                                driver_path = os.path.join(root, file)
+                                if os.path.isfile(driver_path):
+                                    self.logger.info(f"找到本地ChromeDriver: {driver_path}")
+                                    return driver_path
+                        else:
+                            if file == 'chromedriver' and not file.endswith('.zip'):
+                                driver_path = os.path.join(root, file)
+                                # 验证是否可执行
+                                if os.access(driver_path, os.X_OK):
+                                    self.logger.info(f"找到本地ChromeDriver: {driver_path}")
+                                    return driver_path
 
         # 2. 检查系统 PATH
         chromedriver_in_path = shutil.which('chromedriver')
@@ -190,17 +199,27 @@ class SeleniumBrowserManager:
 
             # 先尝试使用本地 ChromeDriver
             local_driver_path = self._find_local_chromedriver()
+            service = None
 
             if local_driver_path:
                 self.logger.info("使用本地ChromeDriver (跳过联网检查)")
-                service = Service(local_driver_path)
-            else:
+                try:
+                    service = Service(local_driver_path)
+                    # 尝试创建driver验证路径是否有效
+                    self.driver = webdriver.Chrome(service=service, options=chrome_options)
+                except Exception as e:
+                    self.logger.warning(f"本地ChromeDriver无法使用: {e}")
+                    self.logger.info("将尝试使用webdriver-manager重新下载")
+                    service = None
+                    self.driver = None
+
+            # 如果本地ChromeDriver不可用，使用webdriver-manager下载
+            if not service or not self.driver:
                 self.logger.info("使用webdriver-manager下载ChromeDriver")
                 driver_path = ChromeDriverManager().install()
                 self.logger.info(f"ChromeDriver已下载: {driver_path}")
                 service = Service(driver_path)
-
-            self.driver = webdriver.Chrome(service=service, options=chrome_options)
+                self.driver = webdriver.Chrome(service=service, options=chrome_options)
 
             # 执行 CDP 命令，进一步隐藏 webdriver 特征
             self.driver.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {

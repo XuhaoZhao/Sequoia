@@ -4,8 +4,10 @@ import talib
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
 import time
+import os
 from db_manager import IndustryDataDB
 from .logger_config import LoggerMixin, log_method_call, log_data_operation
+from .file_path_generator import FilePathGenerator
 
 
 class FinancialInstrument(ABC, LoggerMixin):
@@ -96,6 +98,34 @@ class FinancialInstrument(ABC, LoggerMixin):
 
         except Exception as e:
             self.log_error(f"保存{instrument_info.get('name', self.name)}{period}分钟历史数据到数据库失败: {e}", exc_info=True)
+            raise
+
+    @log_data_operation('保存日K数据')
+    def save_daily_data(self, instrument_info, data):
+        """保存日K数据到数据库
+
+        Args:
+            instrument_info: 产品信息字典
+            data: 字典列表格式的数据
+        """
+        try:
+            instrument_name = instrument_info.get('name', self.name)
+            self.log_info(f"开始保存{instrument_name}的日K数据")
+
+            # 添加产品信息
+            self.db.add_or_update_stock_info(
+                instrument_info.get('code', self.code),
+                instrument_info.get('name', self.name),
+                self.__class__.__name__,
+                self.get_instrument_type()
+            )
+
+            # 插入数据（data应该是字典列表）
+            inserted_count = self.db.insert_kline_data('1d', data)
+            self.log_info(f"已保存{instrument_info.get('name', self.name)}日K数据到数据库，共{inserted_count}条记录")
+
+        except Exception as e:
+            self.log_error(f"保存{instrument_info.get('name', self.name)}日K数据到数据库失败: {e}", exc_info=True)
             raise
     
     @log_data_operation('收集1分钟实时数据')
@@ -321,8 +351,16 @@ class FinancialInstrument(ABC, LoggerMixin):
         
         return signals
     
-    def analyze_macd(self, instrument_info):
-        """分析30分钟级别MACD，接收已经处理好的30分钟数据"""
+    def analyze_macd(self, instrument_info, instrument_type="unknown"):
+        """分析30分钟级别MACD，返回金叉信号数据
+
+        Args:
+            instrument_info: 产品信息字典
+            instrument_type: 产品类型(如: stock, etf等)，用于文件命名
+
+        Returns:
+            list: 金叉信号数据列表，如果没有信号则返回空列表
+        """
         code = instrument_info.get('code', self.code)
         name = instrument_info.get('name', self.name)
 
@@ -331,7 +369,7 @@ class FinancialInstrument(ABC, LoggerMixin):
 
         if data_30m is None or len(data_30m) < 26:
             print(f"{name}: 30分钟数据不足，无法计算MACD")
-            return
+            return []
 
         # 重命名列以匹配计算所需格式
         data_30m = data_30m.rename(columns={
@@ -344,12 +382,12 @@ class FinancialInstrument(ABC, LoggerMixin):
         macd_line, signal_line, _ = self.calculate_macd(close_prices, 5, 13, 5)
 
         if macd_line is None:
-            return
+            return []
 
         signals = self.detect_macd_signals(macd_line, signal_line)
 
         if not signals:
-            return
+            return []
 
         # 筛选当天的金叉信号
         today = datetime.now().strftime('%Y-%m-%d')
@@ -367,10 +405,26 @@ class FinancialInstrument(ABC, LoggerMixin):
 
         if today_golden_cross_signals:
             print(f"\n{name} 当天30分钟MACD金叉信号:")
+
+            # 准备返回的数据
+            csv_data = []
             for signal in today_golden_cross_signals:
                 message = f"{name} 30分钟MACD{signal['type']}信号\n时间: {signal['time']}\nMACD: {signal['macd']:.4f}\nSignal: {signal['signal']:.4f}"
                 print(message)
-    
+
+                # 添加到数据列表
+                csv_data.append({
+                    'code': code,
+                    'name': name,
+                    'time': signal['time'].strftime('%Y-%m-%d %H:%M:%S'),
+                    'macd': round(signal['macd'], 4),
+                    'signal': round(signal['signal'], 4)
+                })
+
+            return csv_data
+
+        return []
+
     def _is_trading_time(self, check_time=None):
         """检查是否在A股交易时间内"""
         if check_time is None:
@@ -427,3 +481,36 @@ class FinancialInstrument(ABC, LoggerMixin):
                 time.sleep(delay_seconds)
 
         print(f"所有{self.get_instrument_type()}{period}分钟历史数据获取完成 - {datetime.now()}")
+
+    def collect_all_daily_data(self, delay_seconds=None):
+        """获取所有产品的日K数据
+
+        Args:
+            delay_seconds: 延迟秒数，如果为None则使用类的默认值
+        """
+        print(f"开始获取所有{self.get_instrument_type()}日K数据 - {datetime.now()}")
+        instruments = self.get_all_instruments()
+        total_instruments = len(instruments)
+
+        if delay_seconds is None:
+            # 使用实现类自定义的延迟参数
+            delay_seconds = self.__class__.delay_seconds
+            print(f"使用{self.get_instrument_type()}的默认延迟时间: {delay_seconds}秒")
+
+        estimated_total_time = delay_seconds * total_instruments
+        print(f"预计总耗时{estimated_total_time/60:.1f}分钟，共{total_instruments}个{self.get_instrument_type()}")
+
+        instruments = list(reversed(instruments))
+        for i, instrument_info in enumerate(instruments, 1):
+            name = instrument_info.get('name', instrument_info.get('板块名称', ''))
+            code = instrument_info.get('code', instrument_info.get('板块代码', ''))
+            print(f"正在获取{name}({code})的日K数据... ({i}/{total_instruments})")
+
+            daily_data = self.get_daily_data(instrument_info)
+            if daily_data is not None and len(daily_data) > 0:
+                self.save_daily_data(instrument_info, daily_data)
+
+            if i < total_instruments:
+                time.sleep(delay_seconds)
+
+        print(f"所有{self.get_instrument_type()}日K数据获取完成 - {datetime.now()}")

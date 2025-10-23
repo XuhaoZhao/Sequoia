@@ -10,7 +10,7 @@ from contextlib import contextmanager
 class IndustryDataDB:
     """
     行业数据SQLite数据库管理器
-    支持按月分表存储1分钟、5分钟和30分钟K线数据
+    支持按月分表存储1分钟、5分钟、30分钟和日K线数据
     """
     
     def __init__(self, db_path: str = "industry_data.db"):
@@ -73,7 +73,7 @@ class IndustryDataDB:
         生成表名
 
         Args:
-            period: 数据周期 ('1m', '5m' 或 '30m')
+            period: 数据周期 ('1m', '5m', '30m' 或 '1d')
             year_month: 年月 (格式: YYYY-MM)
 
         Returns:
@@ -124,8 +124,8 @@ class IndustryDataDB:
         确保指定时间的表存在
 
         Args:
-            period: 数据周期 ('1m', '5m' 或 '30m')
-            datetime_str: 时间字符串 (格式: YYYY-MM-DD HH:MM:SS)
+            period: 数据周期 ('1m', '5m', '30m' 或 '1d')
+            datetime_str: 时间字符串 (格式: YYYY-MM-DD HH:MM:SS 或 YYYY-MM-DD)
 
         Returns:
             表名
@@ -133,13 +133,13 @@ class IndustryDataDB:
         # 提取年月
         dt = datetime.strptime(datetime_str.split()[0], '%Y-%m-%d')
         year_month = dt.strftime('%Y-%m')
-        
+
         table_name = self._get_table_name(period, year_month)
-        
+
         # 检查表是否存在
         with self.get_connection() as conn:
             cursor = conn.execute("""
-                SELECT name FROM sqlite_master 
+                SELECT name FROM sqlite_master
                 WHERE type='table' AND name=?
             """, (table_name,))
 
@@ -152,7 +152,7 @@ class IndustryDataDB:
         插入K线数据
 
         Args:
-            period: 数据周期 ('1m', '5m' 或 '30m')
+            period: 数据周期 ('1m', '5m', '30m' 或 '1d')
             data: 数据列表，每个元素包含: code, name, datetime, open, high, low, close, volume, amount
 
         Returns:
@@ -207,7 +207,7 @@ class IndustryDataDB:
         查询K线数据
 
         Args:
-            period: 数据周期 ('1m', '5m' 或 '30m')
+            period: 数据周期 ('1m', '5m', '30m' 或 '1d')
             code: 股票/板块代码，为None时查询所有
             start_date: 开始日期 (格式: YYYY-MM-DD)
             end_date: 结束日期 (格式: YYYY-MM-DD)

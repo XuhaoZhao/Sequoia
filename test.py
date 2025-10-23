@@ -18,8 +18,9 @@ from financial_framework.index import Index
 from financial_framework.concept_sector import ConceptSector
 from financial_framework.etf import ETF
 from financial_framework.stock import Stock
-from financial_framework.unified_financial_system import UnifiedDataCollector
+from financial_framework.unified_financial_system import UnifiedDataCollector,UnifiedAnalyzer
 from data_collect.stock_chip_race import stock_chip_race_open,stock_chip_race_end,stock_large_cap_filter
+import adata as ad
 
 
 # hh = ak.index_csindex_all()
@@ -98,5 +99,9 @@ from data_collect.stock_chip_race import stock_chip_race_open,stock_chip_race_en
 # print(stock_value)
 
 uu = UnifiedDataCollector()
+uu.collect_all_daily_data(instrument_type='etf')
 
-uu.collect_all_historical_min_data(instrument_type='etf',period='15')
+# fund_etf_hist_em_df = ak.fund_etf_hist_em(symbol="513500", period="daily", start_date="20000101", end_date="20230201", adjust="")
+# print(fund_etf_hist_em_df)
+# data = ad.fund.market.get_market_etf('512690',1,'2025-01-01','2026-01-01')
+# print(data)

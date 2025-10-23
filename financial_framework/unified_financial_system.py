@@ -8,9 +8,12 @@ from .etf import ETF
 from .concept_sector import ConceptSector
 from .index import Index
 from .logger_config import LoggerMixin, log_method_call, FinancialLogger
+from .file_path_generator import FilePathGenerator
 from db_manager import IndustryDataDB
 import settings
 import push
+import pandas as pd
+import os
 
 
 class UnifiedDataCollector(LoggerMixin):
@@ -81,6 +84,36 @@ class UnifiedDataCollector(LoggerMixin):
             delay_seconds: 延迟秒数（批量收集时使用），如果为None则使用各类的默认延迟参数
         """
         return self.collect_all_historical_min_data(instrument_type, "5", delay_seconds)
+
+    @log_method_call(include_args=False)
+    def collect_all_daily_data(self, instrument_type='stock', delay_seconds=None):
+        """收集指定类型产品的日K数据（遍历该类型下所有子项）
+
+        Args:
+            instrument_type: 产品类型 ('industry_sector', 'stock', 'etf', 'concept_sector', 'index')
+            delay_seconds: 延迟秒数（批量收集时使用），如果为None则使用各类的默认延迟参数
+        """
+        instruments_map = {
+            'industry_sector': self.industry_sector,
+            'stock': self.stock,
+            'etf': self.etf,
+            'concept_sector': self.concept_sector,
+            'index': self.index
+        }
+
+        if instrument_type not in instruments_map:
+            self.log_warning(f"未知的产品类型: {instrument_type}")
+            return
+
+        instrument = instruments_map[instrument_type]
+
+        # 如果没有指定延迟时间，使用类的默认延迟参数
+        if delay_seconds is None:
+            delay_seconds = instrument.__class__.delay_seconds
+            self.log_info(f"使用{instrument.get_instrument_type()}的默认延迟时间: {delay_seconds}秒")
+
+        # 调用基类的 collect_all_daily_data 方法
+        instrument.collect_all_daily_data(delay_seconds)
     
     @log_method_call(include_args=False)
     def collect_realtime_1min_data(self, instrument_type):
@@ -212,11 +245,12 @@ class UnifiedAnalyzer:
             except Exception as e:
                 print(f"分析{instrument_info.get('name', '')}失败: {e}")
     
-    def analyze_all_instruments(self, instrument_types=None):
-        """分析所有产品"""
-        if instrument_types is None:
-            instrument_types = ['industry_sector', 'concept_sector', 'index']  # 默认只分析板块和指数
-        
+    def analyze_all_instruments(self, instrument_type='industry_sector'):
+        """分析指定类型的所有产品，收集所有金叉信号后统一保存
+
+        Args:
+            instrument_type: 产品类型 ('industry_sector', 'stock', 'etf', 'concept_sector', 'index')
+        """
         instruments_map = {
             'industry_sector': self.industry_sector,
             'stock': self.stock,
@@ -224,25 +258,82 @@ class UnifiedAnalyzer:
             'concept_sector': self.concept_sector,
             'index': self.index
         }
-        
-        for instrument_type in instrument_types:
-            if instrument_type in instruments_map:
-                instrument = instruments_map[instrument_type]
-                print(f"开始分析{instrument.get_instrument_type()}...")
-                
-                all_instruments = instrument.get_all_instruments()
-                for instrument_info in all_instruments:
-                    try:
-                        instrument.analyze_macd(instrument_info)
-                    except Exception as e:
-                        print(f"分析{instrument_info.get('name', '')}失败: {e}")
-                
-                print(f"{instrument.get_instrument_type()}分析完成")
-    
-    def run_analysis(self, instrument_types=None):
-        """运行分析"""
+
+        if instrument_type not in instruments_map:
+            print(f"未知的产品类型: {instrument_type}")
+            return
+
+        instrument = instruments_map[instrument_type]
+        print(f"开始分析{instrument.get_instrument_type()}...")
+
+        # 收集所有金叉信号数据
+        all_golden_cross_data = []
+
+        all_instruments = instrument.get_all_instruments()
+        for instrument_info in all_instruments:
+            try:
+                # analyze_macd 现在返回金叉信号数据列表
+                golden_cross_data = instrument.analyze_macd(instrument_info, instrument_type)
+                if golden_cross_data:
+                    all_golden_cross_data.extend(golden_cross_data)
+            except Exception as e:
+                print(f"分析{instrument_info.get('name', '')}失败: {e}")
+
+        # 统一保存所有金叉信号到CSV
+        if all_golden_cross_data:
+            today = datetime.now().strftime('%Y-%m-%d')
+            self._save_golden_cross_to_csv(all_golden_cross_data, instrument_type, today)
+            print(f"共收集到 {len(all_golden_cross_data)} 个金叉信号，已保存到CSV")
+        else:
+            print("未发现金叉信号")
+
+        print(f"{instrument.get_instrument_type()}分析完成")
+
+    def _save_golden_cross_to_csv(self, data, instrument_type, date_str):
+        """将金叉信号保存到CSV文件
+
+        Args:
+            data: 金叉信号数据列表
+            instrument_type: 产品类型
+            date_str: 日期字符串
+        """
+        try:
+            # 使用FilePathGenerator生成文件路径
+            filepath = FilePathGenerator.generate_macd_signal_path(
+                instrument_type=instrument_type,
+                period="30m",
+                date=date_str
+            )
+
+            # 确保目录存在
+            FilePathGenerator.ensure_directory_exists(filepath)
+
+            # 创建DataFrame
+            df = pd.DataFrame(data)
+
+            # 如果文件已存在，追加数据；否则创建新文件
+            if os.path.exists(filepath):
+                # 读取现有数据
+                existing_df = pd.read_csv(filepath)
+                # 合并数据并去重(基于code和time)
+                df = pd.concat([existing_df, df], ignore_index=True)
+                df = df.drop_duplicates(subset=['code', 'time'], keep='last')
+
+            # 保存到CSV
+            df.to_csv(filepath, index=False, encoding='utf-8-sig')
+            print(f"金叉信号已保存到文件: {filepath}")
+
+        except Exception as e:
+            print(f"保存金叉信号到CSV失败: {e}")
+
+    def run_analysis(self, instrument_type='industry_sector'):
+        """运行分析
+
+        Args:
+            instrument_type: 产品类型 ('industry_sector', 'stock', 'etf', 'concept_sector', 'index')
+        """
         print("开始统一分析...")
-        self.analyze_all_instruments(instrument_types)
+        self.analyze_all_instruments(instrument_type)
         print("统一分析完成")
 
 
@@ -288,6 +379,10 @@ class IndustryDataCollector(UnifiedDataCollector):
     def collect_all_historical_5min_data(self, delay_seconds=None):
         """收集所有板块5分钟历史数据（兼容性方法）"""
         return self.collect_all_historical_min_data("5", delay_seconds)
+
+    def collect_all_daily_data(self, delay_seconds=None):
+        """收集所有板块日K数据（兼容性方法）"""
+        return self.industry_sector.collect_all_daily_data(delay_seconds)
     
     # 保持原有方法名称以兼容旧代码
     def get_historical_data(self, board_name, period="5"):
@@ -335,7 +430,7 @@ class IndustryAnalyzer(UnifiedAnalyzer):
     
     def analyze_all_boards(self):
         """分析所有板块的MACD（兼容性方法）"""
-        return self.analyze_all_instruments(['industry_sector'])
+        return self.analyze_all_instruments('industry_sector')
     
     def is_price_at_monthly_high_drawdown_5pct(self, board_name, current_price=None):
         """计算月度回撤（兼容性方法）"""

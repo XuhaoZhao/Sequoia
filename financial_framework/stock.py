@@ -1,6 +1,6 @@
 import akshare as ak
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 from .financial_instruments import FinancialInstrument
 from .logger_config import log_data_operation, log_method_call
 from data_collect.stock_chip_race import stock_large_cap_filter
@@ -46,21 +46,39 @@ class Stock(FinancialInstrument):
             return []
     
     @log_data_operation('获取股票历史分时数据')
-    def get_historical_min_data(self, stock_info, period="5", delay_seconds=1.0):
+    def get_historical_min_data(self, stock_info, period="5", delay_seconds=1.0, days_back=30):
         """获取股票历史分时数据
 
         Args:
-            stock_info: 股票信息字典（包含 code 和 name）
-            period: 数据周期（"1", "5", "15", "30", "60"等，单位：分钟）
-            delay_seconds: 延迟时间（秒）
+            stock_info: 股票信息字典(包含 code 和 name)
+            period: 数据周期("1", "5", "15", "30", "60"等,单位:分钟)
+            delay_seconds: 延迟时间(秒)
+            days_back: 向前反推的天数,默认30天(一个月)
 
         Returns:
             字典列表格式的数据
         """
         try:
             self.log_debug(f"开始获取股票{stock_info['code']}的{period}分钟历史数据")
+
+            # 计算时间范围:从当前时间向前反推指定天数
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=days_back)
+
+            # 格式化时间字符串,akshare需要的格式:"2024-03-20 09:30:00"
+            start_date_str = start_date.strftime("%Y-%m-%d 09:30:00")
+            end_date_str = end_date.strftime("%Y-%m-%d %H:%M:%S")
+
+            self.log_debug(f"查询时间范围: {start_date_str} 至 {end_date_str}")
+
             # 使用股票代码获取分钟级历史数据
-            hist_data = ak.stock_zh_a_hist_min_em(symbol=stock_info['code'], period=period, adjust="")
+            hist_data = ak.stock_zh_a_hist_min_em(
+                symbol=stock_info['code'],
+                start_date=start_date_str,
+                end_date=end_date_str,
+                period=period,
+                adjust=""
+            )
             if hist_data.empty:
                 return []
 
@@ -108,9 +126,28 @@ class Stock(FinancialInstrument):
     
     @log_data_operation('获取股票日K数据')
     def get_daily_data(self, stock_info, start_date=None, end_date=None):
-        """获取股票日K数据"""
+        """获取股票日K数据
+
+        Args:
+            stock_info: 股票信息字典（包含 code 和 name）
+            start_date: 开始日期，格式 "20240320"，如果为None则自动计算为当前日期前推250个交易日（约350天）
+            end_date: 结束日期，格式 "20240320"，如果为None则使用当前日期
+
+        Returns:
+            字典列表格式的数据
+        """
         try:
-            self.log_debug(f"开始获取股票{stock_info['code']}日K数据")
+            # 如果未指定日期范围，则自动计算
+            if end_date is None:
+                end_date = datetime.now().strftime("%Y%m%d")
+
+            if start_date is None:
+                # 250个交易日大约是350个自然日（考虑周末和节假日）
+                days_ago = datetime.now() - timedelta(days=350)
+                start_date = days_ago.strftime("%Y%m%d")
+
+            self.log_info(f"获取股票{stock_info['code']}的日K数据，时间范围: {start_date} 至 {end_date}")
+
             # 获取股票日K线数据
             daily_data = ak.stock_zh_a_hist(symbol=stock_info['code'], period="daily", start_date=start_date, end_date=end_date, adjust="")
             if daily_data.empty:

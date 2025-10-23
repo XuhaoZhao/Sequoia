@@ -129,6 +129,33 @@ class FilePathGenerator:
         """
         return os.path.join(base_dir, f"{data_type}_data_*.{extension}")
 
+    @staticmethod
+    def generate_macd_signal_path(instrument_type: str, period: str = "30m", date: Optional[str] = None, base_dir: str = "data") -> str:
+        """
+        生成MACD金叉信号文件路径
+
+        Args:
+            instrument_type (str): 产品类型，如 'stock', 'etf' 等
+            period (str): 数据周期，默认为 '30m'
+            date (Optional[str]): 日期字符串，格式为 YYYY-MM-DD，如果为None则使用今天
+            base_dir (str): 基础目录，默认为 'data'
+
+        Returns:
+            str: 生成的文件路径
+
+        Examples:
+            >>> FilePathGenerator.generate_macd_signal_path('stock')
+            'data/stock_macd_30m_2025-10-23.csv'
+
+            >>> FilePathGenerator.generate_macd_signal_path('etf', '30m', '2025-10-22')
+            'data/etf_macd_30m_2025-10-22.csv'
+        """
+        if date is None:
+            date = datetime.datetime.now().strftime("%Y-%m-%d")
+
+        filename = f"{instrument_type}_macd_{period}_{date}.csv"
+        return os.path.join(base_dir, filename)
+
 
 # 便捷函数，保持向后兼容性
 def generate_etf_data_path(date: Optional[str] = None) -> str:
@@ -149,3 +176,25 @@ def generate_industry_data_path(date: Optional[str] = None) -> str:
 def generate_concept_data_path(date: Optional[str] = None) -> str:
     """生成概念数据文件路径"""
     return FilePathGenerator.generate_data_path("concept", date)
+
+
+def generate_macd_signal_path(instrument_type: str, period: str = "30m", date: Optional[str] = None) -> str:
+    """
+    生成MACD金叉信号文件路径的便捷函数
+
+    Args:
+        instrument_type (str): 产品类型，如 'stock', 'etf' 等
+        period (str): 数据周期，默认为 '30m'
+        date (Optional[str]): 日期字符串，格式为 YYYY-MM-DD，如果为None则使用今天
+
+    Returns:
+        str: 生成的文件路径
+
+    Examples:
+        >>> generate_macd_signal_path('stock')
+        'data/stock_macd_30m_2025-10-23.csv'
+
+        >>> generate_macd_signal_path('etf', '30m', '2025-10-22')
+        'data/etf_macd_30m_2025-10-22.csv'
+    """
+    return FilePathGenerator.generate_macd_signal_path(instrument_type, period, date)
