@@ -1049,8 +1049,8 @@ class TechnicalAnalyzer:
             return {"error": f"MACD信号文件不存在: {filepath}"}
 
         try:
-            # 读取CSV文件
-            macd_data = pd.read_csv(filepath)
+            # 读取CSV文件，指定code列为字符串以保留前导零
+            macd_data = pd.read_csv(filepath, dtype={'code': str})
             if macd_data.empty:
                 return {"error": f"MACD信号文件为空: {filepath}"}
 

@@ -227,7 +227,7 @@ def setup_scheduled_jobs(test_mode=False):
     # 添加定时任务：每天15:05执行数据收集
     scheduler.add_job(
         func=scheduled_data_collection,
-        trigger=CronTrigger(hour=15, minute=5),
+        trigger=CronTrigger(hour=16, minute=34),
         id='daily_data_collection',
         name='每日数据收集任务',
         replace_existing=True
