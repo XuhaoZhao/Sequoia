@@ -17,6 +17,7 @@ import os
 import akshare as ak
 import talib
 import numpy as np
+import json
 
 
 class UnifiedDataCollector(LoggerMixin):
@@ -1017,6 +1018,115 @@ class TechnicalAnalyzer:
             return "👀 部分技术指标显示调整，建议观望等待更好机会"
         else:
             return "✅ 技术指标相对正常，可按既定策略操作"
+
+    def analyze_instruments_from_macd_file(self, instrument_type, date_str=None):
+        """
+        从MACD信号文件读取数据并执行综合技术分析
+
+        Args:
+            instrument_type: 产品类型 ('industry_sector', 'stock', 'etf', 'concept_sector', 'index')
+            date_str: 日期字符串，格式为 YYYY-MM-DD，如果为None则使用今天
+
+        Returns:
+            dict: 包含所有分析结果的字典
+        """
+        from datetime import datetime
+
+        if date_str is None:
+            date_str = datetime.now().strftime("%Y-%m-%d")
+
+        # 使用FilePathGenerator生成文件路径
+        filepath = FilePathGenerator.generate_macd_signal_path(
+            instrument_type=instrument_type,
+            period="30m",
+            date=date_str
+        )
+
+        print(f"读取MACD信号文件: {filepath}")
+
+        # 检查文件是否存在
+        if not os.path.exists(filepath):
+            return {"error": f"MACD信号文件不存在: {filepath}"}
+
+        try:
+            # 读取CSV文件
+            macd_data = pd.read_csv(filepath)
+            if macd_data.empty:
+                return {"error": f"MACD信号文件为空: {filepath}"}
+
+            print(f"成功读取 {len(macd_data)} 条MACD信号数据")
+
+            # 获取所有独特的股票代码作为列表变量
+            if 'code' in macd_data.columns:
+                instrument_codes = macd_data['code'].unique().tolist()
+                print(f"发现 {len(instrument_codes)} 个独特的金融产品代码")
+            else:
+                return {"error": "MACD信号文件中没有找到'code'列"}
+
+            # 为每个代码执行综合技术分析
+            all_analysis_results = []
+            successful_analyses = 0
+            failed_analyses = 0
+
+            for code in instrument_codes:
+                try:
+                    print(f"正在分析: {code}")
+
+                    # 执行综合技术分析
+                    analysis_result = self.analyze_comprehensive_technical(
+                        code=code,
+                        data_source=instrument_type.replace('_sector', '')  # 转换为数据源格式
+                    )
+
+                    if "error" not in analysis_result:
+                        analysis_result["分析来源"] = "MACD信号文件"
+                        analysis_result["MACD信号日期"] = date_str
+                        analysis_result["产品类型"] = instrument_type
+                        all_analysis_results.append(analysis_result)
+                        successful_analyses += 1
+                        print(f"✓ {code} 分析完成")
+                    else:
+                        print(f"✗ {code} 分析失败: {analysis_result['error']}")
+                        failed_analyses += 1
+
+                except Exception as e:
+                    print(f"✗ {code} 分析异常: {str(e)}")
+                    failed_analyses += 1
+                    continue
+
+            # 生成结果摘要
+            summary = {
+                "分析日期": date_str,
+                "产品类型": instrument_type,
+                "总产品数量": len(instrument_codes),
+                "成功分析数量": successful_analyses,
+                "失败分析数量": failed_analyses,
+                "分析成功率": f"{(successful_analyses / len(instrument_codes) * 100):.1f}%" if instrument_codes else "0%"
+            }
+
+            # 将完整结果保存到JSON文件
+            result_data = {
+                "摘要": summary,
+                "分析结果": all_analysis_results
+            }
+
+            # 生成JSON文件路径
+            json_filepath = f"data/{instrument_type}_comprehensive_analysis_{date_str}.json"
+
+            # 确保目录存在
+            FilePathGenerator.ensure_directory_exists(json_filepath)
+
+            # 保存到JSON文件
+            with open(json_filepath, 'w', encoding='utf-8') as f:
+                json.dump(result_data, f, ensure_ascii=False, indent=2, default=str)
+
+            print(f"分析结果已保存到JSON文件: {json_filepath}")
+            print(f"分析完成: 成功 {successful_analyses} 个，失败 {failed_analyses} 个")
+
+            return result_data
+
+        except Exception as e:
+            return {"error": f"处理MACD信号文件失败: {str(e)}"}
 
 
 # 兼容性类，保持原有接口

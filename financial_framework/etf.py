@@ -18,7 +18,7 @@ class ETF(FinancialInstrument):
     delay_seconds = 80
 
     def get_instrument_type(self):
-        return "ETF"
+        return "etf"
     
     @log_method_call(include_args=False)
     def get_all_instruments(self):
@@ -30,14 +30,14 @@ class ETF(FinancialInstrument):
             etf_path = generate_etf_data_path()
             self.log_info(f"读取ETF数据文件: {etf_path}")
 
-            # 读取CSV文件
-            df = pd.read_csv(etf_path)
+            # 读取CSV文件，将SECURITY_CODE列作为字符串读取以保持前导零
+            df = pd.read_csv(etf_path, dtype={'SECURITY_CODE': str})
 
             # 从CSV文件中获取股票名称和代码
             result = []
             for _, row in df.iterrows():
                 etf_info = {
-                    'code': str(row['SECURITY_CODE']),
+                    'code': str(row['SECURITY_CODE']).zfill(6),  # 确保代码为6位，补齐前导零
                     'name': str(row['SECURITY_SHORT_NAME'])
                 }
                 result.append(etf_info)

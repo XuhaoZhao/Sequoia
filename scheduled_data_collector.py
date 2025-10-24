@@ -8,7 +8,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from financial_framework.eastmoney_xuangu_api_interceptor import EastmoneySearchCodeInterceptor
 from financial_framework.file_path_generator import FilePathGenerator, generate_etf_data_path, generate_stock_data_path
-
+from financial_framework.unified_financial_system import UnifiedDataCollector,UnifiedAnalyzer,TechnicalAnalyzer
 
 # 设置日志
 logger = logging.getLogger(__name__)
@@ -174,6 +174,39 @@ def scheduled_data_collection():
     logger.info(f"ETF数据收集: {'成功' if etf_success else '失败'}")
     logger.info(f"股票数据收集: {'成功' if stock_success else '失败'}")
     logger.info("=" * 50)
+    time.sleep(500)
+    logger.info("开始获取etf 30m数据")
+    unifiedDataCollector = UnifiedDataCollector()
+    unifiedDataCollector.collect_all_historical_min_data(instrument_type='etf', period="30")
+    logger.info("结束获取etf 30m数据")
+    time.sleep(5)
+    logger.info("开始获取stock 30m数据")
+    unifiedDataCollector.collect_all_historical_min_data(instrument_type='stock', period="30")
+    logger.info("结束获取stock 30m数据")
+    time.sleep(5)
+    unifiedAnalyzer = UnifiedAnalyzer()
+    logger.info("开始分析stock macd")
+    unifiedAnalyzer.analyze_all_instruments('stock')
+    logger.info("结束分析stock macd")
+    time.sleep(5)
+    logger.info("开始分析etf macd")
+    unifiedAnalyzer.analyze_all_instruments('etf')
+    logger.info("结束分析etf macd")
+    time.sleep(5)
+    logger.info("开始获取etf 1d数据")
+    unifiedDataCollector.collect_all_daily_data('etf')
+    logger.info("结束获取etf 1d数据")
+    time.sleep(5)
+    logger.info("开始获取stock 1d数据")
+    unifiedDataCollector.collect_all_daily_data('stock')
+    logger.info("结束获取stock 1d数据")
+    technicalAnalyzer = TechnicalAnalyzer()
+    logger.info("开始分析etf dayK")
+    technicalAnalyzer.analyze_instruments_from_macd_file('etf')
+    logger.info("结束分析etf dayK")
+    logger.info("开始分析stock dayK")
+    technicalAnalyzer.analyze_instruments_from_macd_file('stock')
+    logger.info("结束分析stock dayK")
 
 
 def setup_scheduled_jobs(test_mode=False):

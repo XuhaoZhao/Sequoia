@@ -18,7 +18,7 @@ from financial_framework.index import Index
 from financial_framework.concept_sector import ConceptSector
 from financial_framework.etf import ETF
 from financial_framework.stock import Stock
-from financial_framework.unified_financial_system import UnifiedDataCollector,UnifiedAnalyzer
+from financial_framework.unified_financial_system import UnifiedDataCollector,UnifiedAnalyzer,TechnicalAnalyzer
 from data_collect.stock_chip_race import stock_chip_race_open,stock_chip_race_end,stock_large_cap_filter
 import adata as ad
 
@@ -98,10 +98,24 @@ import adata as ad
 # stock_value = stock.get_all_instruments()
 # print(stock_value)
 
-uu = UnifiedDataCollector()
-uu.collect_all_daily_data(instrument_type='etf')
+# uu = UnifiedDataCollector()
+# uu.collect_all_historical_min_data(instrument_type='etf',period = '30')
 
 # fund_etf_hist_em_df = ak.fund_etf_hist_em(symbol="513500", period="daily", start_date="20000101", end_date="20230201", adjust="")
 # print(fund_etf_hist_em_df)
 # data = ad.fund.market.get_market_etf('512690',1,'2025-01-01','2026-01-01')
+
 # print(data)
+
+# # 注意：该接口返回的数据只有最近一个交易日的有开盘价，其他日期开盘价为 0
+# stock_zh_a_hist_min_em_df = ak.stock_zh_a_hist_min_em(symbol="002463", start_date="2025-08-20 09:30:00", end_date="2026-03-20 15:00:00", period="30", adjust="")
+# print(stock_zh_a_hist_min_em_df)
+
+# ff = UnifiedAnalyzer()
+# ff.analyze_all_instruments('stock')
+
+# ee = TechnicalAnalyzer()
+# ee.analyze_instruments_from_macd_file('stock')
+
+data = ad.fund.info.all_etf_exchange_traded_info()
+print(data)
