@@ -276,8 +276,8 @@ class UnifiedAnalyzer:
         all_instruments = instrument.get_all_instruments()
         for instrument_info in all_instruments:
             try:
-                # analyze_macd 现在返回金叉信号数据列表
-                golden_cross_data = instrument.analyze_macd(instrument_info, instrument_type)
+                # 使用UnifiedAnalyzer的analyze_macd方法返回金叉信号数据列表
+                golden_cross_data = self.analyze_macd(instrument_info, instrument_type)
                 if golden_cross_data:
                     all_golden_cross_data.extend(golden_cross_data)
             except Exception as e:
@@ -330,6 +330,267 @@ class UnifiedAnalyzer:
         except Exception as e:
             print(f"保存金叉信号到CSV失败: {e}")
 
+    def calculate_macd(self, close_prices, fast=12, slow=26, signal=9):
+        """计算MACD指标"""
+        if len(close_prices) < slow:
+            return None, None, None
+
+        close_array = close_prices.values.astype(float)
+        macd_line, signal_line, histogram = talib.MACD(close_array,
+                                                      fastperiod=fast,
+                                                      slowperiod=slow,
+                                                      signalperiod=signal)
+        return pd.Series(macd_line, index=close_prices.index), \
+               pd.Series(signal_line, index=close_prices.index), \
+               pd.Series(histogram, index=close_prices.index)
+
+    def detect_macd_signals(self, macd_line, signal_line, timestamps):
+        """检测MACD金叉死叉信号"""
+        if macd_line is None or signal_line is None or len(macd_line) < 2:
+            return []
+
+        signals = []
+
+        for i in range(1, len(macd_line)):
+            if pd.isna(macd_line.iloc[i]) or pd.isna(signal_line.iloc[i]) or \
+               pd.isna(macd_line.iloc[i-1]) or pd.isna(signal_line.iloc[i-1]):
+                continue
+
+            # 获取对应的时间戳
+            timestamp = timestamps.iloc[i] if i < len(timestamps) else None
+
+            # 金叉
+            if macd_line.iloc[i-1] <= signal_line.iloc[i-1] and macd_line.iloc[i] > signal_line.iloc[i]:
+                signals.append({
+                    'type': '金叉',
+                    'index': i,
+                    'timestamp': timestamp,
+                    'macd': macd_line.iloc[i],
+                    'signal': signal_line.iloc[i]
+                })
+
+            # 死叉
+            elif macd_line.iloc[i-1] >= signal_line.iloc[i-1] and macd_line.iloc[i] < signal_line.iloc[i]:
+                signals.append({
+                    'type': '死叉',
+                    'index': i,
+                    'timestamp': timestamp,
+                    'macd': macd_line.iloc[i],
+                    'signal': signal_line.iloc[i]
+                })
+
+        return signals
+
+    def analyze_macd(self, instrument_info, instrument_type="unknown"):
+        """分析30分钟级别MACD，返回金叉信号数据
+
+        Args:
+            instrument_info: 产品信息字典
+            instrument_type: 产品类型(如: stock, etf等)，用于文件命名
+
+        Returns:
+            list: 金叉信号数据列表，如果没有信号则返回空列表
+        """
+        code = instrument_info.get('code')
+        name = instrument_info.get('name')
+
+        # 从数据库获取30分钟数据
+        data_30m = self.db.query_kline_data('30m', code=code)
+
+        if data_30m is None or len(data_30m) < 26:
+            print(f"{name}: 30分钟数据不足，无法计算MACD")
+            return []
+
+        # 重命名列以匹配计算所需格式
+        data_30m = data_30m.rename(columns={
+            'datetime': '日期时间',
+            'close_price': '收盘'
+        })
+        data_30m['日期时间'] = pd.to_datetime(data_30m['日期时间'])
+
+        close_prices = data_30m['收盘']
+        macd_line, signal_line, _ = self.calculate_macd(close_prices, 5, 13, 5)
+
+        if macd_line is None:
+            return []
+
+        signals = self.detect_macd_signals(macd_line, signal_line, data_30m['日期时间'])
+        print(signals)
+        if not signals:
+            return []
+
+        # 筛选当天的金叉信号
+        today = datetime.now().strftime('%Y-%m-%d')
+        # today = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+        today_golden_cross_signals = []
+
+        for signal in signals:
+            timestamp = signal['timestamp']
+            if timestamp is not None and timestamp.strftime('%Y-%m-%d') == today and signal['type'] == '金叉':
+                today_golden_cross_signals.append({
+                    'time': timestamp,
+                    'type': signal['type'],
+                    'macd': signal['macd'],
+                    'signal': signal['signal']
+                })
+
+        if today_golden_cross_signals:
+            print(f"\n{name} 当天30分钟MACD金叉信号:")
+
+            # 准备返回的数据
+            csv_data = []
+            for signal in today_golden_cross_signals:
+                message = f"{name} 30分钟MACD{signal['type']}信号\n时间: {signal['time']}\nMACD: {signal['macd']:.4f}\nSignal: {signal['signal']:.4f}"
+                print(message)
+
+                # 添加到数据列表
+                csv_data.append({
+                    'code': code,
+                    'name': name,
+                    'time': signal['time'].strftime('%Y-%m-%d %H:%M:%S'),
+                    'macd': round(signal['macd'], 4),
+                    'signal': round(signal['signal'], 4)
+                })
+
+            return csv_data
+
+        return []
+
+    def detect_macd_bottom_convergence(self, instrument_info, instrument_type="unknown"):
+        """检测MACD底部收敛模式：DIF在0轴下方且在DEA下方，但差距在缩小
+
+        Args:
+            instrument_info: 产品信息字典
+            instrument_type: 产品类型(如: stock, etf等)，用于文件命名
+
+        Returns:
+            list: 底部收敛信号数据列表，如果没有信号则返回空列表
+        """
+        code = instrument_info.get('code')
+        name = instrument_info.get('name')
+
+        # 从数据库获取30分钟数据
+        data_30m = self.db.query_kline_data('30m', code=code)
+
+        if data_30m is None or len(data_30m) < 30:
+            return []
+
+        # 重命名列以匹配计算所需格式
+        data_30m = data_30m.rename(columns={
+            'datetime': '日期时间',
+            'close_price': '收盘'
+        })
+        data_30m['日期时间'] = pd.to_datetime(data_30m['日期时间'])
+
+        close_prices = data_30m['收盘']
+        print(close_prices)
+        macd_line, signal_line, _ = self.calculate_macd(close_prices, 5, 13, 5)
+        print(macd_line)
+        print(signal_line)
+
+        if macd_line is None or len(macd_line) < 3:
+            return []
+
+        # 检查最近3个数据点
+        recent_points = 3
+        if len(macd_line) < recent_points:
+            return []
+
+        convergence_signals = []
+
+        # 检查最近3个点
+        for i in range(len(macd_line) - recent_points + 1, len(macd_line)):
+            if (pd.isna(macd_line.iloc[i]) or pd.isna(signal_line.iloc[i]) or
+                pd.isna(macd_line.iloc[i-1]) or pd.isna(signal_line.iloc[i-1]) or
+                pd.isna(macd_line.iloc[i-2]) or pd.isna(signal_line.iloc[i-2])):
+                continue
+
+            dif_current = macd_line.iloc[i]
+            dea_current = signal_line.iloc[i]
+            dif_prev = macd_line.iloc[i-1]
+            dea_prev = signal_line.iloc[i-1]
+            dif_prev2 = macd_line.iloc[i-2]
+            dea_prev2 = signal_line.iloc[i-2]
+
+            # 检查条件：
+            # 1. DIF < 0 (在0轴下方)
+            # 2. DIF < DEA (DIF在DEA下方)
+            # 3. 最近3个点的DIF-DEA差值在逐渐缩小（差距绝对值减小）
+            if (dif_current < 0 and
+                dif_current < dea_current and
+                dif_prev < 0 and
+                dif_prev < dea_prev and
+                dif_prev2 < 0 and
+                dif_prev2 < dea_prev2):
+
+                # 计算差值的绝对值
+                diff_current = abs(dif_current - dea_current)
+                diff_prev = abs(dif_prev - dea_prev)
+                diff_prev2 = abs(dif_prev2 - dea_prev2)
+
+                # 检查差值是否在逐渐缩小
+                if diff_current < diff_prev and diff_prev < diff_prev2:
+                    timestamp = data_30m.iloc[i]['日期时间']
+
+                    convergence_signals.append({
+                        'code': code,
+                        'name': name,
+                        'time': timestamp.strftime('%Y-%m-%d %H:%M:%S'),
+                        'macd': round(dif_current, 4),
+                        'signal': round(dea_current, 4)
+                    })
+
+        if convergence_signals:
+            print(f"\n{name} 检测到MACD底部收敛信号:")
+            for signal in convergence_signals:
+                print(f"{name} MACD底部收敛信号\n时间: {signal['time']}\nMACD: {signal['macd']:.4f}\nSignal: {signal['signal']:.4f}")
+
+        return convergence_signals
+
+    def analyze_macd_convergence_patterns(self, instrument_type='industry_sector'):
+        """分析指定类型所有产品的MACD底部收敛模式
+
+        Args:
+            instrument_type: 产品类型 ('industry_sector', 'stock', 'etf', 'concept_sector', 'index')
+        """
+        instruments_map = {
+            'industry_sector': self.industry_sector,
+            'stock': self.stock,
+            'etf': self.etf,
+            'concept_sector': self.concept_sector,
+            'index': self.index
+        }
+
+        if instrument_type not in instruments_map:
+            print(f"未知的产品类型: {instrument_type}")
+            return
+
+        instrument = instruments_map[instrument_type]
+        print(f"开始分析{instrument.get_instrument_type()}的MACD底部收敛模式...")
+
+        # 收集所有底部收敛信号数据
+        all_convergence_data = []
+
+        all_instruments = instrument.get_all_instruments()
+        for instrument_info in all_instruments:
+            try:
+                convergence_data = self.detect_macd_bottom_convergence(instrument_info, instrument_type)
+                if convergence_data:
+                    all_convergence_data.extend(convergence_data)
+            except Exception as e:
+                print(f"分析{instrument_info.get('name', '')}的底部收敛模式失败: {e}")
+
+        # 统一保存所有底部收敛信号到CSV（使用与金叉信号相同的格式）
+        if all_convergence_data:
+            today = datetime.now().strftime('%Y-%m-%d')
+            self._save_golden_cross_to_csv(all_convergence_data, instrument_type, today)
+            print(f"共收集到 {len(all_convergence_data)} 个底部收敛信号，已保存到CSV")
+        else:
+            print("未发现底部收敛信号")
+
+        print(f"{instrument.get_instrument_type()}底部收敛模式分析完成")
+
+    
     def run_analysis(self, instrument_type='industry_sector'):
         """运行分析
 
@@ -1049,7 +1310,7 @@ class TechnicalAnalyzer:
             return {"error": f"MACD信号文件不存在: {filepath}"}
 
         try:
-            # 读取CSV文件，指定code列为字符串以保留前导零
+            # 读取CSV文件，将code列作为字符串读取以保持前导零
             macd_data = pd.read_csv(filepath, dtype={'code': str})
             if macd_data.empty:
                 return {"error": f"MACD信号文件为空: {filepath}"}

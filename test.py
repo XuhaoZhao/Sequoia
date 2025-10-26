@@ -21,8 +21,8 @@ from financial_framework.stock import Stock
 from financial_framework.unified_financial_system import UnifiedDataCollector,UnifiedAnalyzer,TechnicalAnalyzer
 from data_collect.stock_chip_race import stock_chip_race_open,stock_chip_race_end,stock_large_cap_filter
 import adata as ad
-
-
+from rewrite_ak_share.rewrite_index_zh_em import index_zh_a_hist
+from rewrite_ak_share.rewrite_fund_etf_em import fund_etf_hist_min_em
 # hh = ak.index_csindex_all()
 
 # print(hh)
@@ -98,8 +98,8 @@ import adata as ad
 # stock_value = stock.get_all_instruments()
 # print(stock_value)
 
-# uu = UnifiedDataCollector()
-# uu.collect_all_historical_min_data(instrument_type='etf',period = '30')
+uu = UnifiedDataCollector()
+uu.collect_all_historical_min_data(instrument_type='etf',period = '30')
 
 # fund_etf_hist_em_df = ak.fund_etf_hist_em(symbol="513500", period="daily", start_date="20000101", end_date="20230201", adjust="")
 # print(fund_etf_hist_em_df)
@@ -112,10 +112,33 @@ import adata as ad
 # print(stock_zh_a_hist_min_em_df)
 
 # ff = UnifiedAnalyzer()
-# ff.analyze_all_instruments('stock')
+# ff.analyze_all_instruments('etf')
+# # ff.analyze_all_instruments('stock')
+# instrument_info = {
+#       'code': '601919',
+#       'name': 'XD中远海'
+#   }
+# signals = ff.detect_macd_bottom_convergence(instrument_info, 'stock')
+# data = ad.fund.info.all_etf_exchange_traded_info()
+# print(data)
 
-# ee = TechnicalAnalyzer()
-# ee.analyze_instruments_from_macd_file('stock')
+# # 上证指数代码一般为 “000001.SH”
+symbol = "000001"
+# # 调用接口获取日频历史数据
+# df = index_zh_a_hist(symbol=symbol, period="daily", start_date="20240102", end_date="20251024")
+# print(df)
+#              日期       开盘       收盘       最高       最低        成交量           成交额    振幅   涨跌幅    涨跌额   换手率
+# 0    2024-01-02  2972.78  2962.28  2976.27  2962.28  304141793  3.459507e+11  0.47 -0.43 -12.65  0.64
+# df2 = ad.fund.market.get_market_etf('511090',
+#                 1,  # 1表示日线
+#                 '20230101',
+#                 '20251024'
+#             )
+# #     fund_code           trade_time  trade_date     open     high      low    close    volume           amount change change_pct
+# # 136    511090  2024-01-02 00:00:00  2024-01-02   99.811   99.848   99.586   99.646   1349030    142520790.000 -0.178     -0.178
+# print(df2)
 
-data = ad.fund.info.all_etf_exchange_traded_info()
-print(data)
+# stock_zh_a_hist_df = ak.stock_zh_a_hist(symbol="000001", period="daily", start_date="20240301", end_date='20240528', adjust="")
+# print(stock_zh_a_hist_df)
+
+# fund_etf_hist_min_em(symbol="515170", period="1", adjust="", start_date="2025-10-15 09:00:00", end_date="2026-03-20 17:40:00")

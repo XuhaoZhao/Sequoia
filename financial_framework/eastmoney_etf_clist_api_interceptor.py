@@ -19,8 +19,11 @@ from datetime import datetime
 import requests
 import random
 import string
-import csv
 import os
+import sys
+
+# 添加父目录到路径以便导入db_manager
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # 导入日志系统
 try:
@@ -31,17 +34,25 @@ except ImportError:
     from logger_config import FinancialLogger, get_logger
     from selenium_browser_manager import SeleniumBrowserManager
 
+# 导入数据库管理器
+try:
+    from db_manager import IndustryDataDB
+except ImportError:
+    # 如果相对导入失败，尝试绝对导入
+    from ..db_manager import IndustryDataDB
+
 
 class EastmoneyEtfClistInterceptor:
     """
     使用 Selenium 拦截东方财富ETF网格列表页面的 clist API
     """
-    def __init__(self, headless=False, log_full_data=False, log_summary_only=False):
+    def __init__(self, headless=False, log_full_data=False, log_summary_only=False, db_path="industry_data.db"):
         """
         初始化拦截器
         :param headless: 是否无头模式(不显示浏览器窗口)
         :param log_full_data: 是否记录完整的请求和响应数据到数据日志（默认False）
         :param log_summary_only: 是否只记录关键摘要信息到控制台（默认False，True时仅显示关键统计信息）
+        :param db_path: 数据库文件路径
         """
         # 初始化日志器
         self.logger = get_logger('financial_framework.etf_clist_interceptor')
@@ -61,8 +72,12 @@ class EastmoneyEtfClistInterceptor:
         self.log_full_data = log_full_data
         self.log_summary_only = log_summary_only
 
+        # 初始化数据库管理器
+        self.db = IndustryDataDB(db_path)
+
         self.logger.info("初始化东方财富ETF网格列表API拦截器")
         self.logger.info(f"日志配置: 完整数据={log_full_data}, 仅摘要={log_summary_only}")
+        self.logger.info(f"数据库路径: {db_path}")
         self.browser_manager.init_driver()
 
     def start_interception(self, check_interval=1, refresh_interval=300):
@@ -352,6 +367,14 @@ class EastmoneyEtfClistInterceptor:
             # 访问页面
             self.browser_manager.navigate_to(url)
 
+            # 等待页面加载完成后主动刷新一次（参考选股拦截器的做法）
+            self.logger.info("等待页面加载完成...")
+            time.sleep(10)
+            self.logger.info("执行主动刷新以触发数据加载...")
+            self.browser_manager.refresh_page()
+            self.logger.info("等待刷新后页面加载...")
+            time.sleep(20)
+
             self.logger.info("开始监听 API 响应...")
 
             # 用于跟踪已处理的request_id，避免重复处理
@@ -506,7 +529,7 @@ class EastmoneyEtfClistInterceptor:
 
                                 self.logger.info("=" * 60)
 
-                    time.sleep(1)
+                    time.sleep(10)
 
                 except KeyboardInterrupt:
                     self.logger.info("用户手动停止测试")
@@ -597,7 +620,7 @@ class EastmoneyEtfClistInterceptor:
                 self.requested_pages.add(page_no)
 
                 # 延时避免请求过快，使用1秒延时
-                time.sleep(1)
+                time.sleep(5)
 
                 # 构造分页参数
                 params = base_params.copy()
@@ -680,9 +703,8 @@ class EastmoneyEtfClistInterceptor:
             self.data_logger.info(json.dumps(summary_info, ensure_ascii=False, indent=2))
             self.data_logger.info("=" * 80)
 
-            # 保存数据到CSV文件
-            csv_file_path = f"data/etf_data_{datetime.now().strftime('%Y-%m-%d')}.csv"
-            self._save_data_to_csv(all_data, csv_file_path)
+            # 保存数据到数据库
+            self._save_data_to_db(all_data)
 
             return all_data
 
@@ -690,95 +712,189 @@ class EastmoneyEtfClistInterceptor:
             self.logger.error(f"获取所有分页数据失败: {e}", exc_info=True)
             return None
 
-    def _save_data_to_csv(self, data_list, csv_file_path):
+    def _save_data_to_db(self, data_list):
         """
-        将ETF数据保存到CSV文件
+        将ETF数据保存到数据库
         :param data_list: ETF数据列表
-        :param csv_file_path: CSV文件保存路径
         :return: 保存是否成功
         """
         try:
             if not data_list:
-                self.logger.warning("数据列表为空，无法保存到CSV文件")
+                self.logger.warning("数据列表为空，无法保存到数据库")
                 return False
 
-            # 确保目录存在
-            os.makedirs(os.path.dirname(csv_file_path), exist_ok=True)
+            self.logger.info("=" * 80)
+            self.logger.info("开始将ETF数据保存到数据库...")
 
-            # 定义字段名称映射（基于观察到的数据结构）
-            field_mapping = {
-                'f12': '股票代码',
-                'f13': '股票类型',
-                'f14': '股票名称',
-                'f2': '最新价',
-                'f3': '涨跌额',
-                'f4': '涨跌幅',
-                'f5': '成交量',
-                'f6': '成交额',
-                'f7': '振幅',
-                'f8': '最高',
-                'f9': '最低',
-                'f10': '今开',
-                'f11': '昨收',
-                'f15': '买入价',
-                'f16': '卖出价',
-                'f17': '昨结算',
-                'f18': '今结算'
-            }
+            success_count = 0
+            error_count = 0
 
-            # 获取所有可能的字段
-            all_fields = set()
             for item in data_list:
-                all_fields.update(item.keys())
+                try:
+                    # 提取关键字段
+                    etf_code = str(item.get('f12', ''))  # ETF代码
+                    etf_type = str(item.get('f13', ''))  # ETF类型
+                    etf_name = str(item.get('f14', ''))  # ETF名称
 
-            # 排序字段，将关键字段放在前面
-            key_fields = ['f12', 'f13', 'f14', 'f2', 'f3', 'f4', 'f5', 'f6']
-            sorted_fields = []
+                    # 验证必要字段
+                    if not etf_code or not etf_name:
+                        self.logger.warning(f"跳过无效记录: code={etf_code}, name={etf_name}")
+                        error_count += 1
+                        continue
 
-            # 先添加关键字段
-            for field in key_fields:
-                if field in all_fields:
-                    sorted_fields.append(field)
-                    all_fields.remove(field)
+                    # 调用数据库管理器保存数据
+                    self.db.add_or_update_etf_info(
+                        etf_code=etf_code,
+                        etf_type=etf_type,
+                        etf_name=etf_name
+                    )
+                    success_count += 1
 
-            # 添加其他字段
-            sorted_fields.extend(sorted(all_fields))
+                except Exception as e:
+                    self.logger.error(f"保存单条数据失败: {e}, 数据: {item}")
+                    error_count += 1
+                    continue
 
-            # 创建表头（使用中文映射）
-            headers = []
-            for field in sorted_fields:
-                headers.append(field_mapping.get(field, field))
+            self.logger.info("=" * 80)
+            self.logger.info(f"✓ 成功保存 {success_count} 条ETF数据到数据库")
+            if error_count > 0:
+                self.logger.warning(f"失败 {error_count} 条数据")
 
-            with open(csv_file_path, 'w', newline='', encoding='utf-8-sig') as csvfile:
-                writer = csv.writer(csvfile)
+            # 显示前几条数据预览
+            self.logger.info("数据预览（前3条）:")
+            for i, item in enumerate(data_list[:3], 1):
+                code = item.get('f12', '')
+                name = item.get('f14', '')
+                etf_type = item.get('f13', '')
+                price = item.get('f2', '')
+                change_pct = item.get('f4', '')
+                self.logger.info(f"  {i}. {name}({code}) - 类型:{etf_type} 价格:{price} 涨跌幅:{change_pct}%")
 
-                # 写入表头
-                writer.writerow(headers)
-
-                # 写入数据
-                for item in data_list:
-                    row = []
-                    for field in sorted_fields:
-                        row.append(item.get(field, ''))
-                    writer.writerow(row)
-
-                self.logger.info(f"✓ 成功写入 {len(data_list)} 条ETF数据到CSV文件")
-                self.logger.info(f"文件路径: {csv_file_path}")
-
-                # 显示前几条数据预览
-                self.logger.info("数据预览（前3条）:")
-                for i, item in enumerate(data_list[:3], 1):
-                    code = item.get('f12', '')
-                    name = item.get('f14', '')
-                    price = item.get('f2', '')
-                    change_pct = item.get('f4', '')
-                    self.logger.info(f"  {i}. {name}({code}) - 价格:{price} 涨跌幅:{change_pct}%")
-
-                return True
+            self.logger.info("=" * 80)
+            return True
 
         except Exception as e:
-            self.logger.error(f"保存数据到CSV文件失败: {e}", exc_info=True)
+            self.logger.error(f"保存数据到数据库失败: {e}", exc_info=True)
             return False
+
+    def _wait_for_response_after_refresh(self, timeout=60):
+        """
+        在刷新后等待API响应（不重新访问页面）
+        :param timeout: 超时时间（秒）
+        :return: 响应数据或None
+        """
+        self.logger.info("在刷新后等待API响应...")
+
+        # 用于跟踪已处理的request_id，避免重复处理
+        processed_request_ids = set()
+        pending_requests = {}
+        intercept_count = 0
+        start_time = time.time()
+
+        while time.time() - start_time < timeout:
+            try:
+                # 获取性能日志
+                logs = self.browser_manager.get_performance_logs()
+
+                for log in logs:
+                    message = json.loads(log['message'])
+                    method = message.get('message', {}).get('method', '')
+
+                    # 拦截请求发送
+                    if method == 'Network.requestWillBeSent':
+                        params = message.get('message', {}).get('params', {})
+                        request = params.get('request', {})
+                        request_id = params.get('requestId', '')
+                        url_sent = request.get('url', '')
+
+                        if self.target_api_url in url_sent:
+                            pending_requests[request_id] = {
+                                'request_url': url_sent,
+                                'request_method': request.get('method', ''),
+                                'request_headers': request.get('headers', {}),
+                                'request_post_data': request.get('postData', None),
+                                'request_time': datetime.now().isoformat()
+                            }
+                            self.logger.info(f"✓ 检测到API请求: {url_sent}")
+
+                    # 查找网络响应
+                    if method == 'Network.responseReceived':
+                        params = message.get('message', {}).get('params', {})
+                        response = params.get('response', {})
+                        request_id = params.get('requestId', '')
+                        url_received = response.get('url', '')
+                        status = response.get('status', 0)
+
+                        if self.target_api_url in url_received and request_id not in processed_request_ids:
+                            processed_request_ids.add(request_id)
+                            intercept_count += 1
+
+                            self.logger.info("=" * 60)
+                            self.logger.info(f"✓ 拦截到第 {intercept_count} 个响应")
+                            self.logger.info(f"URL: {url_received}")
+                            self.logger.info(f"状态码: {status}")
+
+                            # 尝试获取响应内容
+                            try:
+                                body = self.browser_manager.get_response_body(request_id)
+
+                                if body and len(body) > 10:
+                                    self.logger.info(f"✓ 响应大小: {len(body)} 字符")
+
+                                    # 尝试解析JSON（处理JSONP格式）
+                                    try:
+                                        response_json = None
+
+                                        # 检查是否是JSONP格式（jQuery_callback(...)）
+                                        if body.startswith('jQuery') and '(' in body:
+                                            # 移除JSONP包装
+                                            json_start = body.find('(') + 1
+                                            json_end = body.rfind(')')
+
+                                            if json_end > json_start:
+                                                json_content = body[json_start:json_end]
+                                            else:
+                                                # 如果找不到结束括号，从第一个括号开始到最后
+                                                json_content = body[json_start:]
+
+                                            self.logger.info(f"检测到JSONP格式，提取JSON内容长度: {len(json_content)}")
+                                            response_json = json.loads(json_content)
+                                            self.logger.info("✓ 响应为JSONP格式，已解析为JSON")
+                                        else:
+                                            response_json = json.loads(body)
+                                            self.logger.info("✓ 响应为标准JSON格式")
+
+                                        # 分析数据结构
+                                        if 'data' in response_json:
+                                            data = response_json['data']
+                                            self.logger.info(f"✓ 包含data字段")
+
+                                            if 'diff' in data:
+                                                diff = data['diff']
+                                                self.logger.info(f"✓ 包含diff数组，长度: {len(diff)}")
+
+                                                if len(diff) > 0:
+                                                    self.logger.info("✓ 获取到有效数据")
+                                                    return response_json
+
+                                    except json.JSONDecodeError as e:
+                                        self.logger.warning(f"响应JSON解析失败: {e}")
+                                else:
+                                    self.logger.warning("响应体为空或过短")
+
+                            except Exception as e:
+                                self.logger.error(f"获取响应体失败: {e}")
+
+                            self.logger.info("=" * 60)
+
+                time.sleep(5)
+
+            except KeyboardInterrupt:
+                self.logger.info("用户手动停止等待")
+                break
+
+        self.logger.warning(f"在{timeout}秒内未获取到有效响应")
+        return None
 
     def _request_next_page(self, request_info, query_params, first_page_response=None):
         """
@@ -825,6 +941,10 @@ def main():
     try:
         logger.info("开始第一步：测试API响应")
         first_response = interceptor.test_api_response()
+
+        # 如果第一次没有获取到数据，再次尝试
+        if not first_response:
+            logger.warning("第一次未获取到数据，程序结束")
 
         if first_response:
             logger.info("第一步成功，开始第二步：获取所有分页数据")

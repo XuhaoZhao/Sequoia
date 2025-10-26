@@ -304,127 +304,7 @@ class FinancialInstrument(ABC, LoggerMixin):
         
         return resampled.reset_index()
     
-    def calculate_macd(self, close_prices, fast=12, slow=26, signal=9):
-        """计算MACD指标"""
-        if len(close_prices) < slow:
-            return None, None, None
-        
-        close_array = close_prices.values.astype(float)
-        
-        macd_line, signal_line, histogram = talib.MACD(close_array, 
-                                                      fastperiod=fast, 
-                                                      slowperiod=slow, 
-                                                      signalperiod=signal)        
-        return pd.Series(macd_line, index=close_prices.index), \
-               pd.Series(signal_line, index=close_prices.index), \
-               pd.Series(histogram, index=close_prices.index)
     
-    def detect_macd_signals(self, macd_line, signal_line):
-        """检测MACD金叉死叉信号"""
-        if macd_line is None or signal_line is None or len(macd_line) < 2:
-            return []
-        
-        signals = []
-        
-        for i in range(1, len(macd_line)):
-            if pd.isna(macd_line.iloc[i]) or pd.isna(signal_line.iloc[i]) or \
-               pd.isna(macd_line.iloc[i-1]) or pd.isna(signal_line.iloc[i-1]):
-                continue
-            
-            # 金叉
-            if macd_line.iloc[i-1] <= signal_line.iloc[i-1] and macd_line.iloc[i] > signal_line.iloc[i]:
-                signals.append({
-                    'type': '金叉',
-                    'index': i,
-                    'macd': macd_line.iloc[i],
-                    'signal': signal_line.iloc[i]
-                })
-            
-            # 死叉
-            elif macd_line.iloc[i-1] >= signal_line.iloc[i-1] and macd_line.iloc[i] < signal_line.iloc[i]:
-                signals.append({
-                    'type': '死叉',
-                    'index': i,
-                    'macd': macd_line.iloc[i],
-                    'signal': signal_line.iloc[i]
-                })
-        
-        return signals
-    
-    def analyze_macd(self, instrument_info, instrument_type="unknown"):
-        """分析30分钟级别MACD，返回金叉信号数据
-
-        Args:
-            instrument_info: 产品信息字典
-            instrument_type: 产品类型(如: stock, etf等)，用于文件命名
-
-        Returns:
-            list: 金叉信号数据列表，如果没有信号则返回空列表
-        """
-        code = instrument_info.get('code', self.code)
-        name = instrument_info.get('name', self.name)
-
-        # 从数据库获取30分钟数据
-        data_30m = self.db.query_kline_data('30m', code=code)
-
-        if data_30m is None or len(data_30m) < 26:
-            print(f"{name}: 30分钟数据不足，无法计算MACD")
-            return []
-
-        # 重命名列以匹配计算所需格式
-        data_30m = data_30m.rename(columns={
-            'datetime': '日期时间',
-            'close_price': '收盘'
-        })
-        data_30m['日期时间'] = pd.to_datetime(data_30m['日期时间'])
-
-        close_prices = data_30m['收盘']
-        macd_line, signal_line, _ = self.calculate_macd(close_prices, 5, 13, 5)
-
-        if macd_line is None:
-            return []
-
-        signals = self.detect_macd_signals(macd_line, signal_line)
-
-        if not signals:
-            return []
-
-        # 筛选当天的金叉信号
-        today = datetime.now().strftime('%Y-%m-%d')
-        today_golden_cross_signals = []
-
-        for signal in signals:
-            timestamp = data_30m.iloc[signal['index']]['日期时间']
-            if timestamp.strftime('%Y-%m-%d') == today and signal['type'] == '金叉':
-                today_golden_cross_signals.append({
-                    'time': timestamp,
-                    'type': signal['type'],
-                    'macd': signal['macd'],
-                    'signal': signal['signal']
-                })
-
-        if today_golden_cross_signals:
-            print(f"\n{name} 当天30分钟MACD金叉信号:")
-
-            # 准备返回的数据
-            csv_data = []
-            for signal in today_golden_cross_signals:
-                message = f"{name} 30分钟MACD{signal['type']}信号\n时间: {signal['time']}\nMACD: {signal['macd']:.4f}\nSignal: {signal['signal']:.4f}"
-                print(message)
-
-                # 添加到数据列表
-                csv_data.append({
-                    'code': code,
-                    'name': name,
-                    'time': signal['time'].strftime('%Y-%m-%d %H:%M:%S'),
-                    'macd': round(signal['macd'], 4),
-                    'signal': round(signal['signal'], 4)
-                })
-
-            return csv_data
-
-        return []
-
     def _is_trading_time(self, check_time=None):
         """检查是否在A股交易时间内"""
         if check_time is None:
@@ -587,6 +467,8 @@ class FinancialInstrument(ABC, LoggerMixin):
                 return []
 
             # 提取股票代码和名称
+            unique_instruments = {}  # 使用字典来去重，以code为键
+
             for _, row in df.iterrows():
                 code = str(row[code_col]).strip()
                 name = str(row[name_col]).strip()
@@ -596,13 +478,17 @@ class FinancialInstrument(ABC, LoggerMixin):
                     if instrument_type == "stock" and code.isdigit():
                         code = code.zfill(6)
 
-                    instruments.append({
+                    # 使用字典去重，相同code只保留最后一个
+                    unique_instruments[code] = {
                         'code': code,
                         'name': name,
                         'type': instrument_type
-                    })
+                    }
 
-            print(f"从数据文件{data_filepath}中读取到{len(instruments)}个{instrument_type}产品")
+            # 将字典转换为列表
+            instruments = list(unique_instruments.values())
+
+            print(f"从数据文件{data_filepath}中读取到{len(df)}行数据，去重后得到{len(instruments)}个{instrument_type}产品")
             return instruments
 
         except Exception as e:

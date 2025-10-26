@@ -174,7 +174,7 @@ def scheduled_data_collection():
     logger.info(f"ETF数据收集: {'成功' if etf_success else '失败'}")
     logger.info(f"股票数据收集: {'成功' if stock_success else '失败'}")
     logger.info("=" * 50)
-    time.sleep(500)
+    time.sleep(50)
     logger.info("开始获取etf 30m数据")
     unifiedDataCollector = UnifiedDataCollector()
     unifiedDataCollector.collect_all_historical_min_data(instrument_type='etf', period="30")
@@ -227,7 +227,7 @@ def setup_scheduled_jobs(test_mode=False):
     # 添加定时任务：每天15:05执行数据收集
     scheduler.add_job(
         func=scheduled_data_collection,
-        trigger=CronTrigger(hour=16, minute=34),
+        trigger=CronTrigger(hour=7, minute=8),
         id='daily_data_collection',
         name='每日数据收集任务',
         replace_existing=True

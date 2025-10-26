@@ -76,9 +76,10 @@ class ETF(FinancialInstrument):
             hist_data = ak.fund_etf_hist_min_em(
                 symbol=etf_info['code'],
                 period=period,
-                adjust="",
+                adjust='qfq',
                 start_date=start_date,
-                end_date=end_date
+                end_date=end_date,
+                
             )
 
             if hist_data.empty:

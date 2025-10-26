@@ -55,7 +55,18 @@ class IndustryDataDB:
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
-            
+
+            # 创建ETF信息表
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS etf_info (
+                    etf_code TEXT PRIMARY KEY,
+                    etf_type TEXT NOT NULL,
+                    etf_name TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
             # 创建表信息记录表（记录已创建的月度表）
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS table_info (
@@ -65,7 +76,7 @@ class IndustryDataDB:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
-            
+
             conn.commit()
     
     def _get_table_name(self, period: str, year_month: str) -> str:
@@ -354,7 +365,7 @@ class IndustryDataDB:
     def add_or_update_stock_info(self, code: str, name: str, sector: str = None, industry: str = None):
         """
         添加或更新股票/板块信息
-        
+
         Args:
             code: 代码
             name: 名称
@@ -366,6 +377,23 @@ class IndustryDataDB:
                 INSERT OR REPLACE INTO stock_info (code, name, sector, industry, updated_at)
                 VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
             """, (code, name, sector, industry))
+            conn.commit()
+
+    def add_or_update_etf_info(self, etf_code: str, etf_type: str, etf_name: str):
+        """
+        添加或更新ETF信息
+        根据etf_code判断是否存在，存在则更新，不存在则插入
+
+        Args:
+            etf_code: ETF代码
+            etf_type: ETF类型
+            etf_name: ETF名称
+        """
+        with self.get_connection() as conn:
+            conn.execute("""
+                INSERT OR REPLACE INTO etf_info (etf_code, etf_type, etf_name, updated_at)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+            """, (etf_code, etf_type, etf_name))
             conn.commit()
     
     def get_stock_info(self, code: str = None) -> pd.DataFrame:

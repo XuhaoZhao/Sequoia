@@ -77,7 +77,7 @@ class Stock(FinancialInstrument):
                 start_date=start_date_str,
                 end_date=end_date_str,
                 period=period,
-                adjust=""
+                adjust='qfq'
             )
             if hist_data.empty:
                 return []
@@ -149,7 +149,7 @@ class Stock(FinancialInstrument):
             self.log_info(f"获取股票{stock_info['code']}的日K数据，时间范围: {start_date} 至 {end_date}")
 
             # 获取股票日K线数据
-            daily_data = ak.stock_zh_a_hist(symbol=stock_info['code'], period="daily", start_date=start_date, end_date=end_date, adjust="")
+            daily_data = ak.stock_zh_a_hist(symbol=stock_info['code'], period="daily", start_date=start_date, end_date=end_date, adjust='qfq')
             if daily_data.empty:
                 return []
 
