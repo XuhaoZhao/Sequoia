@@ -98,8 +98,8 @@ from rewrite_ak_share.rewrite_fund_etf_em import fund_etf_hist_min_em
 # stock_value = stock.get_all_instruments()
 # print(stock_value)
 
-uu = UnifiedDataCollector()
-uu.collect_all_historical_min_data(instrument_type='etf',period = '30')
+# uu = UnifiedDataCollector()
+# uu.collect_all_historical_min_data(instrument_type='etf',period = '30')
 
 # fund_etf_hist_em_df = ak.fund_etf_hist_em(symbol="513500", period="daily", start_date="20000101", end_date="20230201", adjust="")
 # print(fund_etf_hist_em_df)
@@ -142,3 +142,16 @@ symbol = "000001"
 # print(stock_zh_a_hist_df)
 
 # fund_etf_hist_min_em(symbol="515170", period="1", adjust="", start_date="2025-10-15 09:00:00", end_date="2026-03-20 17:40:00")
+
+# ff = UnifiedAnalyzer()
+# ff.analyze_all_instruments('etf')
+# ff.analyze_all_instruments('etf')
+# signals = ff.analyze_macd_convergence_patterns('stock')
+
+
+
+# fund_etf_spot_em_df = ak.fund_etf_spot_em()
+# print(fund_etf_spot_em_df)
+
+stock_zh_a_spot_em_df = ak.stock_zh_a_spot_em()
+print(stock_zh_a_spot_em_df)

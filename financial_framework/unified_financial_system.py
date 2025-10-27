@@ -415,13 +415,12 @@ class UnifiedAnalyzer:
             return []
 
         signals = self.detect_macd_signals(macd_line, signal_line, data_30m['日期时间'])
-        print(signals)
         if not signals:
             return []
 
         # 筛选当天的金叉信号
-        today = datetime.now().strftime('%Y-%m-%d')
-        # today = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+        # today = datetime.now().strftime('%Y-%m-%d')
+        today = (datetime.now() - timedelta(days=3)).strftime('%Y-%m-%d')
         today_golden_cross_signals = []
 
         for signal in signals:
