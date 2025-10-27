@@ -19,27 +19,27 @@ import random
 import string
 import csv
 import os
-
+from db_manager import IndustryDataDB
 # 导入日志系统
 try:
-    from .logger_config import FinancialLogger, get_logger
-    from .selenium_browser_manager import SeleniumBrowserManager
+    from financial_framework.logger_config import FinancialLogger, get_logger
+    from financial_framework.selenium_browser_manager import SeleniumBrowserManager
 except ImportError:
     # 如果相对导入失败（直接运行此文件），尝试绝对导入
     from logger_config import FinancialLogger, get_logger
     from selenium_browser_manager import SeleniumBrowserManager
 
-
 class EastmoneySearchCodeInterceptor:
     """
     使用 Selenium 拦截东方财富选股页面的 search-code API
     """
-    def __init__(self, headless=False, log_full_data=False, log_summary_only=False):
+    def __init__(self, headless=False, log_full_data=False, log_summary_only=False, use_database=True):
         """
         初始化拦截器
         :param headless: 是否无头模式(不显示浏览器窗口)
         :param log_full_data: 是否记录完整的请求和响应数据到数据日志（默认False）
         :param log_summary_only: 是否只记录关键摘要信息到控制台（默认False，True时仅显示关键统计信息）
+        :param use_database: 是否使用数据库保存数据（默认True）
         """
         # 初始化日志器
         self.logger = get_logger('financial_framework.eastmoney_interceptor')
@@ -50,6 +50,17 @@ class EastmoneySearchCodeInterceptor:
             headless=headless,
             logger_name='financial_framework.eastmoney_interceptor.browser'
         )
+
+        # 初始化数据库连接
+        self.use_database = use_database
+        try:
+            # 延迟导入数据库管理器
+            self.db = IndustryDataDB("industry_data.db")
+            self.logger.info("✓ 数据库连接已建立，将使用数据库保存数据")
+        except Exception as e:
+            self.logger.warning(f"数据库初始化失败: {e}，将使用CSV保存方式")
+            self.use_database = False
+            self.db = None
 
               # API URL映射表
         self.api_url_map = {
@@ -374,7 +385,7 @@ class EastmoneySearchCodeInterceptor:
                                    type="stock", check_interval=1, refresh_interval=15, csv_file_path="scheduled_xuangu_data.csv",
                                    max_refresh_attempts=3):
         """
-        定时运行模式：访问页面并间隔刷新获取选股数据，保存到CSV文件
+        定时运行模式：访问页面并间隔刷新获取选股数据，保存到数据库或CSV文件
         与原版本不同的是：这个版本每次获取到有效数据都会立即保存，不跳过第一次
 
         :param xuangu_id: 选股方案ID
@@ -383,7 +394,7 @@ class EastmoneySearchCodeInterceptor:
         :param type: 数据类型（默认："stock"）
         :param check_interval: 检查网络日志的时间间隔（秒）
         :param refresh_interval: 刷新页面的时间间隔（秒）
-        :param csv_file_path: CSV文件保存路径
+        :param csv_file_path: CSV文件保存路径（仅在数据库不可用时使用）
         :param max_refresh_attempts: 最大刷新尝试次数（包含首次访问）
         """
         try:
@@ -401,7 +412,10 @@ class EastmoneySearchCodeInterceptor:
             self.logger.info("=" * 80)
             self.logger.info(f"访问页面: {url}")
             self.logger.info(f"目标API: {self.target_api_url}")
-            self.logger.info(f"CSV文件路径: {csv_file_path}")
+            if self.use_database:
+                self.logger.info("数据保存方式: 数据库")
+            else:
+                self.logger.info(f"数据保存方式: CSV文件 ({csv_file_path})")
             self.logger.info(f"最大刷新尝试次数: {max_refresh_attempts}")
             self.logger.info(f"检查间隔: {check_interval}秒")
             self.logger.info(f"刷新间隔: {refresh_interval}秒")
@@ -425,6 +439,9 @@ class EastmoneySearchCodeInterceptor:
             self.logger.info("开始监听 search-code API，等待有效数据...")
             self.logger.info("定时运行模式：获取到任何有效数据都会保存")
             self.logger.info("=" * 80)
+
+            # 重置分页跟踪，确保每次运行都能获取完整数据
+            self.requested_pages.clear()
 
             # 持续监听，直到获取到有效数据或达到最大刷新次数
             while refresh_count < max_refresh_attempts:
@@ -513,7 +530,11 @@ class EastmoneySearchCodeInterceptor:
 
                                                 # 检查数据有效性
                                                 if data_list and len(data_list) > 0:
-                                                    self.logger.info("✓ 获取到有效数据，开始保存到CSV文件")
+                                                    # 根据配置选择保存方式
+                                                    if self.use_database:
+                                                        self.logger.info("✓ 获取到有效数据，开始保存到数据库")
+                                                    else:
+                                                        self.logger.info("✓ 获取到有效数据，开始保存到CSV文件")
 
                                                     # 获取请求信息用于分页请求
                                                     if request_id in pending_requests:
@@ -529,39 +550,58 @@ class EastmoneySearchCodeInterceptor:
 
                                                         # 如果有请求数据，触发自动分页请求
                                                         if request_json:
+                                                            # 重置分页跟踪，确保每次运行都能获取完整数据
+                                                            self.requested_pages.clear()
                                                             self.logger.info("开始自动请求所有分页数据...")
-                                                            success = self._request_next_page_and_save_to_csv(
-                                                                request_info, request_json, response_json, type, csv_file_path
+                                                            success = self._request_next_page_and_save_to_database(
+                                                                request_info, request_json, response_json, type
                                                             )
 
                                                             if success:
+                                                                save_method = "数据库" if self.use_database else "CSV文件"
                                                                 self.logger.info("=" * 80)
-                                                                self.logger.info("✓ 所有分页数据已成功保存到CSV文件")
+                                                                self.logger.info(f"✓ 所有分页数据已成功保存到{save_method}")
                                                                 self.logger.info("=" * 80)
                                                                 return True
                                                             else:
                                                                 self.logger.error("分页请求或保存失败，尝试保存当前页数据")
                                                                 # 分页失败，尝试保存当前页数据
-                                                                success = self._save_data_to_csv(data_list, csv_file_path)
+                                                                if self.use_database:
+                                                                    success = self._save_data_to_database(data_list, type)
+                                                                else:
+                                                                    success = self._save_data_to_csv(data_list, csv_file_path)
+
+                                                                save_method = "数据库" if self.use_database else "CSV文件"
                                                                 if success:
-                                                                    self.logger.info("✓ 当前页数据已保存到CSV文件")
+                                                                    self.logger.info(f"✓ 当前页数据已保存到{save_method}")
                                                                     return True
                                                         else:
                                                             # 如果没有请求数据，直接保存当前页面数据
                                                             self.logger.info("无请求数据，直接保存当前页面数据")
-                                                            success = self._save_data_to_csv(data_list, csv_file_path)
+                                                            if self.use_database:
+                                                                success = self._save_data_to_database(data_list, type)
+                                                            else:
+                                                                success = self._save_data_to_csv(data_list, csv_file_path)
+
+                                                            save_method = "数据库" if self.use_database else "CSV文件"
                                                             if success:
                                                                 self.logger.info("=" * 80)
-                                                                self.logger.info("✓ 数据已成功保存到CSV文件")
+                                                                self.logger.info(f"✓ 数据已成功保存到{save_method}")
                                                                 self.logger.info("=" * 80)
                                                                 return True
                                                             else:
-                                                                self.logger.error("保存CSV文件失败")
+                                                                save_method = "数据库" if self.use_database else "CSV文件"
+                                                                self.logger.error(f"保存{save_method}失败")
                                                     else:
                                                         self.logger.warning("无法找到请求信息，直接保存当前页数据")
-                                                        success = self._save_data_to_csv(data_list, csv_file_path)
+                                                        if self.use_database:
+                                                            success = self._save_data_to_database(data_list, type)
+                                                        else:
+                                                            success = self._save_data_to_csv(data_list, csv_file_path)
+
+                                                        save_method = "数据库" if self.use_database else "CSV文件"
                                                         if success:
-                                                            self.logger.info("✓ 当前页数据已保存到CSV文件")
+                                                            self.logger.info(f"✓ 当前页数据已保存到{save_method}")
                                                             return True
                                                 else:
                                                     self.logger.warning("响应数据为空或无效，继续等待...")
@@ -598,9 +638,103 @@ class EastmoneySearchCodeInterceptor:
             self.logger.error(f"定时拦截和保存失败: {e}", exc_info=True)
             return False
 
+    def _convert_eastmoney_to_db_format(self, data_list, data_type="stock"):
+        """
+        将东方财富数据转换为数据库格式
+        :param data_list: 东方财富API返回的数据列表
+        :param data_type: 数据类型 (stock, etf, fund, bond)
+        :return: 转换后的数据库格式数据列表
+        """
+        try:
+            db_data = []
+            current_time = datetime.now().strftime('%Y-%m-%d %H:%M:00')
+
+            for item in data_list:
+                # 根据实际的东方财富API数据结构提取字段
+                # 从CSV文件头可以看出实际字段名
+                code = item.get('SECURITY_CODE', '')
+                name = item.get('SECURITY_SHORT_NAME', '')
+
+                # 从NEWEST_PRICE获取最新价格作为收盘价
+                close_price = self._parse_number(item.get('NEWEST_PRICE', 0))
+
+                # 如果没有最新价格，尝试其他字段
+                if close_price == 0:
+                    close_price = self._parse_number(item.get('CLOSE', item.get('f2', 0)))
+
+                # 开盘价，如果没有现成字段，用收盘价代替
+                # 东方财富选股API通常不提供开盘价
+                open_price = close_price
+
+                # 最高价和最低价
+                high_price = self._parse_number(item.get('PEAK_PRICE<140>', item.get('PEAK_PRICE', close_price)))
+                low_price = self._parse_number(item.get('BOTTOM_PRICE<140>', item.get('BOTTOM_PRICE', close_price)))
+
+                # 成交量处理
+                volume_str = item.get('VOLUME', '0')
+                volume = self._parse_number(volume_str)
+
+                # 成交额处理
+                amount_str = item.get('TRADING_VOLUMES', '0')
+                amount = self._parse_number(amount_str)
+
+                db_record = {
+                    'code': code,
+                    'name': name,
+                    'datetime': current_time,
+                    'open': open_price,
+                    'high': high_price,
+                    'low': low_price,
+                    'close': close_price,
+                    'volume': int(volume),
+                    'amount': amount
+                }
+
+                # 只有当代码和名称都不为空时才添加
+                if code and name:
+                    db_data.append(db_record)
+                    self.logger.debug(f"转换数据: {name}({code}) - 价格:{close_price}, 成交量:{volume}")
+
+            self.logger.info(f"✓ 成功转换 {len(db_data)} 条数据到数据库格式")
+            return db_data
+
+        except Exception as e:
+            self.logger.error(f"数据格式转换失败: {e}", exc_info=True)
+            return []
+
+    def _parse_number(self, value_str):
+        """
+        解析数字字符串，处理中文单位（亿、万等）
+        :param value_str: 数字字符串，可能包含中文单位
+        :return: 浮点数
+        """
+        try:
+            if not value_str or value_str == '0' or value_str == '-':
+                return 0.0
+
+            value_str = str(value_str).strip()
+
+            # 处理中文单位
+            if '亿' in value_str:
+                number_part = value_str.replace('亿', '').strip()
+                return float(number_part) * 100000000
+            elif '万' in value_str:
+                number_part = value_str.replace('万', '').strip()
+                return float(number_part) * 10000
+            elif '千' in value_str:
+                number_part = value_str.replace('千', '').strip()
+                return float(number_part) * 1000
+            else:
+                # 纯数字
+                return float(value_str)
+
+        except (ValueError, TypeError) as e:
+            self.logger.debug(f"解析数字失败: {value_str} - {e}")
+            return 0.0
+
     def _save_data_to_csv(self, data_list, csv_file_path):
         """
-        将选股数据保存到CSV文件
+        将选股数据保存到CSV文件（保留作为备用方案）
         :param data_list: 选股数据列表
         :param csv_file_path: CSV文件保存路径
         :return: 保存是否成功
@@ -641,6 +775,195 @@ class EastmoneySearchCodeInterceptor:
             self.logger.error(f"保存数据到CSV文件失败: {e}", exc_info=True)
             return False
 
+    def _save_data_to_database(self, data_list, data_type="stock"):
+        """
+        将选股数据保存到数据库
+        :param data_list: 选股数据列表
+        :param data_type: 数据类型 (stock, etf, fund, bond)
+        :return: 保存是否成功
+        """
+        try:
+            if not self.use_database or not self.db:
+                self.logger.warning("数据库未可用，无法保存到数据库")
+                return False
+
+            if not data_list:
+                self.logger.warning("数据列表为空，无法保存到数据库")
+                return False
+
+            # 转换数据格式
+            db_data = self._convert_eastmoney_to_db_format(data_list, data_type)
+
+            if not db_data:
+                self.logger.warning("转换后的数据为空，无法保存到数据库")
+                return False
+
+            # 使用分钟数据周期保存
+            period = "1m"  # 选股数据通常是日线数据
+
+            # 保存到数据库
+            inserted_count = self.db.insert_kline_data(period, db_data)
+
+            if inserted_count > 0:
+                self.logger.info(f"✓ 成功保存 {inserted_count} 条数据到数据库")
+                self.logger.info(f"数据类型: {data_type}, 周期: {period}")
+                return True
+            else:
+                self.logger.warning("数据库插入返回0条记录")
+                return False
+
+        except Exception as e:
+            self.logger.error(f"保存数据到数据库失败: {e}", exc_info=True)
+            return False
+
+    def _request_next_page_and_save_to_database(self, request_info, request_json, first_page_response=None, type="stock"):
+        """
+        根据第一页的响应数据，自动请求所有分页并保存到数据库
+        :param request_info: 原始请求信息
+        :param request_json: 原始请求的JSON数据
+        :param first_page_response: 第一页的响应数据（JSON格式）
+        :param type: 数据类型（默认："stock"）
+        :return: 保存是否成功
+        """
+        try:
+            # 避免重复请求
+            if hasattr(self, '_is_requesting_all_pages_db') and self._is_requesting_all_pages_db:
+                return False
+
+            self._is_requesting_all_pages_db = True
+
+            # 重置分页跟踪，确保每次都能获取完整数据
+            self.requested_pages.clear()
+
+            # 解析第一页数据，获取total和dataList
+            if not first_page_response:
+                self.logger.warning("未提供第一页响应数据，无法请求后续分页")
+                return False
+
+            # 提取total和dataList
+            try:
+                data = first_page_response.get('data', {})
+                result = data.get('result', {})
+                total = result.get('total', 0)
+                first_page_data_list = result.get('dataList', [])
+
+                self.logger.info("=" * 80)
+                self.logger.info(f"第一页数据解析:")
+                self.logger.info(f"  总记录数(total): {total}")
+                self.logger.info(f"  第一页数据条数: {len(first_page_data_list)}")
+                self.logger.info("=" * 80)
+
+                if total == 0:
+                    self.logger.warning("总记录数为0，无需请求后续分页")
+                    return False
+
+                # 收集所有数据
+                all_data_list = first_page_data_list.copy()
+
+            except Exception as e:
+                self.logger.error(f"解析第一页响应数据失败: {e}", exc_info=True)
+                return False
+
+            # 计算总页数
+            page_size = request_json.get('pageSize', 50)
+            total_pages = (total + page_size - 1) // page_size  # 向上取整
+
+            self.logger.info(f"每页大小: {page_size}")
+            self.logger.info(f"计算总页数: {total_pages}")
+            self.logger.info("=" * 80)
+
+            # 如果只有一页，直接保存第一页数据
+            if total_pages <= 1:
+                self.logger.info("只有1页数据，直接保存第一页数据")
+                success = self._save_data_to_database(all_data_list, type)
+                return success
+
+            # 请求后续页面 (从第2页开始)
+            url = request_info['request_url']
+            headers = request_info['request_headers'].copy()
+            headers['Content-Type'] = 'application/json'
+
+            for page_no in range(2, total_pages + 1):
+                # 检查是否已请求过
+                if page_no in self.requested_pages:
+                    continue
+
+                self.requested_pages.add(page_no)
+
+                # 延时1秒，避免请求过快
+                self.logger.info(f"延时1秒后请求第{page_no}页...")
+                time.sleep(1)
+
+                # 复制请求数据
+                next_page_json = request_json.copy()
+
+                # 修改页码
+                if 'pageNo' in next_page_json:
+                    next_page_json['pageNo'] = page_no
+                elif 'pageNum' in next_page_json:
+                    next_page_json['pageNum'] = page_no
+                elif 'page' in next_page_json:
+                    next_page_json['page'] = page_no
+
+                # 随机化requestId，避免反爬
+                if 'requestId' in next_page_json:
+                    next_page_json['requestId'] = self._randomize_request_id(next_page_json['requestId'])
+
+                # 发起请求
+                self.logger.info(f"正在请求第{page_no}/{total_pages}页...")
+                self.logger.info(f"请求URL: {url}")
+
+                try:
+                    response = requests.post(
+                        url,
+                        json=next_page_json,
+                        headers=headers,
+                        timeout=30
+                    )
+
+                    if response.status_code == 200:
+                        self.logger.info(f"✓ 第{page_no}页请求成功! 状态码: {response.status_code}")
+                        self.logger.info(f"✓ 响应大小: {len(response.text)} 字符")
+
+                        # 解析响应数据
+                        try:
+                            page_response_json = response.json()
+                            page_data = page_response_json.get('data', {})
+                            page_result = page_data.get('result', {})
+                            page_data_list = page_result.get('dataList', [])
+
+                            self.logger.info(f"✓ 第{page_no}页数据条数: {len(page_data_list)}")
+
+                            # 收集数据
+                            all_data_list.extend(page_data_list)
+
+                        except Exception as e:
+                            self.logger.error(f"解析第{page_no}页响应数据失败: {e}", exc_info=True)
+                    else:
+                        self.logger.error(f"第{page_no}页请求失败! 状态码: {response.status_code}")
+                        self.logger.error(f"响应内容: {response.text[:200]}")
+
+                except Exception as e:
+                    self.logger.error(f"请求第{page_no}页时发生错误: {e}", exc_info=True)
+
+            # 所有页面请求完成，保存数据到数据库
+            self.logger.info("=" * 80)
+            self.logger.info("所有分页数据收集完成!")
+            self.logger.info(f"总记录数(total): {total}")
+            self.logger.info(f"实际收集到的数据条数: {len(all_data_list)}")
+            self.logger.info("=" * 80)
+
+            success = self._save_data_to_database(all_data_list, type)
+            if success:
+                self.logger.info("✓ 所有分页数据已成功保存到数据库")
+            return success
+
+        except Exception as e:
+            self.logger.error(f"请求所有分页时发生错误: {e}", exc_info=True)
+            return False
+        finally:
+            self._is_requesting_all_pages_db = False
+
     def _request_next_page_and_save_to_csv(self, request_info, request_json, first_page_response=None, type="stock", csv_file_path="xuangu_data.csv"):
         """
         根据第一页的响应数据，自动请求所有分页并保存到CSV文件
@@ -657,6 +980,9 @@ class EastmoneySearchCodeInterceptor:
                 return False
 
             self._is_requesting_all_pages_csv = True
+
+            # 重置分页跟踪，确保每次都能获取完整数据
+            self.requested_pages.clear()
 
             # 解析第一页数据，获取total和dataList
             if not first_page_response:
@@ -831,10 +1157,12 @@ def main():
     # 日志配置参数说明：
     # - log_full_data=False: 不记录完整的请求和响应数据到数据日志（节省空间）
     # - log_summary_only=True: 控制台只显示关键摘要信息（简洁模式）
+    # - use_database=True: 使用数据库保存数据（设为False则使用CSV文件）
     interceptor = EastmoneySearchCodeInterceptor(
         headless=False,
         log_full_data=False,      # 设为 True 则记录完整数据
-        log_summary_only=True     # 设为 False 则显示详细日志
+        log_summary_only=True,    # 设为 False 则显示详细日志
+        use_database=True         # 设为 False 则使用CSV文件保存
     )
 
     if not interceptor.browser_manager.is_initialized():
@@ -846,7 +1174,7 @@ def main():
     logger.info(f"可用的API类型: {', '.join(available_types)}")
 
     # 定时运行参数
-    SCHEDULE_INTERVAL = 60  # 5分钟 = 300秒
+    SCHEDULE_INTERVAL = 120  # 5分钟 = 300秒
     CSV_BASE_PATH = "data/scheduled_xuangu_data.csv"
 
     # 配置参数

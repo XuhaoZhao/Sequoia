@@ -23,6 +23,7 @@ from data_collect.stock_chip_race import stock_chip_race_open,stock_chip_race_en
 import adata as ad
 from rewrite_ak_share.rewrite_index_zh_em import index_zh_a_hist
 from rewrite_ak_share.rewrite_fund_etf_em import fund_etf_hist_min_em
+from db_manager import IndustryDataDB
 # hh = ak.index_csindex_all()
 
 # print(hh)
@@ -153,5 +154,6 @@ symbol = "000001"
 # fund_etf_spot_em_df = ak.fund_etf_spot_em()
 # print(fund_etf_spot_em_df)
 
-stock_zh_a_spot_em_df = ak.stock_zh_a_spot_em()
-print(stock_zh_a_spot_em_df)
+# stock_zh_a_spot_em_df = ak.stock_zh_a_spot_em()
+# print(stock_zh_a_spot_em_df)
+db = IndustryDataDB()
