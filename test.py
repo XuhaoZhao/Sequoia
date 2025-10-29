@@ -99,8 +99,8 @@ from db_manager import IndustryDataDB
 # stock_value = stock.get_all_instruments()
 # print(stock_value)
 
-# uu = UnifiedDataCollector()
-# uu.collect_all_historical_min_data(instrument_type='etf',period = '30')
+uu = UnifiedDataCollector()
+uu.collect_all_historical_min_data(instrument_type='etf',period = '30')
 
 # fund_etf_hist_em_df = ak.fund_etf_hist_em(symbol="513500", period="daily", start_date="20000101", end_date="20230201", adjust="")
 # print(fund_etf_hist_em_df)
@@ -156,4 +156,4 @@ symbol = "000001"
 
 # stock_zh_a_spot_em_df = ak.stock_zh_a_spot_em()
 # print(stock_zh_a_spot_em_df)
-db = IndustryDataDB()
+# db = IndustryDataDB()

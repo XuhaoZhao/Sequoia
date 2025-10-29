@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Optional, List, Dict, Tuple
 import threading
 from contextlib import contextmanager
+from functools import lru_cache
 
 
 class IndustryDataDB:
@@ -413,7 +414,33 @@ class IndustryDataDB:
             else:
                 sql = "SELECT * FROM stock_info ORDER BY code"
                 return pd.read_sql_query(sql, conn)
-    
+
+    @lru_cache(maxsize=128)
+    def get_etf_info(self, etf_code: str = None) -> Dict[str, str]:
+        """
+        获取ETF信息（带缓存）
+
+        Args:
+            etf_code: ETF代码，为None时返回所有
+
+        Returns:
+            ETF信息字典，格式为 {etf_code: etf_type}
+        """
+        with self.get_connection() as conn:
+            if etf_code:
+                sql = "SELECT * FROM etf_info WHERE etf_code = ?"
+                df = pd.read_sql_query(sql, conn, params=[etf_code])
+            else:
+                sql = "SELECT * FROM etf_info ORDER BY etf_code"
+                df = pd.read_sql_query(sql, conn)
+
+            # 转换为字典格式 {etf_code: etf_type}
+            result = {}
+            for _, row in df.iterrows():
+                result[row['etf_code']] = row['etf_type']
+
+            return result
+
     def get_table_statistics(self) -> pd.DataFrame:
         """
         获取数据库表统计信息
