@@ -1174,12 +1174,12 @@ def main():
     logger.info(f"可用的API类型: {', '.join(available_types)}")
 
     # 定时运行参数
-    SCHEDULE_INTERVAL = 120  # 5分钟 = 300秒
+    SCHEDULE_INTERVAL = 300  # 5分钟 = 300秒
     CSV_BASE_PATH = "data/scheduled_xuangu_data.csv"
 
     # 配置参数
     config = {
-        "xuangu_id": "xc0d3858a90493012efd",
+        "xuangu_id": "xc0d647de27193013bb2",
         "color": "w",
         "action": "edit_way",
         "type": "stock",               # 数据类型

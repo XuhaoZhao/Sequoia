@@ -420,7 +420,7 @@ class UnifiedAnalyzer:
 
         # 筛选当天的金叉信号
         # today = datetime.now().strftime('%Y-%m-%d')
-        today = (datetime.now() - timedelta(days=3)).strftime('%Y-%m-%d')
+        today = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
         today_golden_cross_signals = []
 
         for signal in signals:
