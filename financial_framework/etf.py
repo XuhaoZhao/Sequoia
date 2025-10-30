@@ -11,6 +11,7 @@ from financial_framework.file_path_generator import (
 )
 import pandas as pd
 from datetime import datetime, timedelta
+from rewrite_ak_share.rewrite_fund_etf_em import fund_etf_hist_min_em
 class ETF(FinancialInstrument):
     """ETF类"""
 
@@ -72,14 +73,14 @@ class ETF(FinancialInstrument):
                 start_date = one_month_ago.strftime("%Y-%m-%d %H:%M:%S")
 
             self.log_info(f"获取{etf_info['name']}的{period}分钟数据，时间范围: {start_date} 至 {end_date}")
-
-            hist_data = ak.fund_etf_hist_min_em(
+            code_id_dict = self.db.get_etf_info()
+            hist_data = fund_etf_hist_min_em(
                 symbol=etf_info['code'],
                 period=period,
                 adjust='qfq',
                 start_date=start_date,
                 end_date=end_date,
-                
+                code_id_dict = code_id_dict
             )
 
             if hist_data.empty:
