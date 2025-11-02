@@ -464,7 +464,7 @@ def create_default_config() -> Dict:
         "use_database": True,  # 使用数据库保存数据
 
         # 选股配置
-        "stock_xuangu_id": "xc0d647de27193013bb2",
+        "stock_xuangu_id": "xc0d80aece1307005f65",
         "etf_xuangu_id": "xc0d38036a3d93000c67",  # ETF专用ID
         "color": "w",
         "action": "edit_way",
