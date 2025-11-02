@@ -11,10 +11,10 @@ def init():
     config_file = os.path.join(root_dir, 'config.yaml')
     with open(config_file, 'r') as file:
         config = yaml.safe_load(file)
-    df = ak.stock_lhb_stock_statistic_em(symbol="近三月")
-    mask = (df['买方机构次数'] > 1)  # 机构买入次数大于1
-    df = df.loc[mask]
-    top_list = df['代码'].tolist()
+    # df = ak.stock_lhb_stock_statistic_em(symbol="近三月")
+    # mask = (df['买方机构次数'] > 1)  # 机构买入次数大于1
+    # df = df.loc[mask]
+    # top_list = df['代码'].tolist()
 
 
 def get_config():

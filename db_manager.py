@@ -78,6 +78,31 @@ class IndustryDataDB:
                 )
             """)
 
+            # 创建MACD数据表
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS macd_data (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    code TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    time TEXT NOT NULL,
+                    macd REAL NOT NULL,
+                    signal REAL NOT NULL,
+                    instrument_type TEXT,
+                    signal_type TEXT,
+                    notification_sent INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(code, time, instrument_type, signal_type)
+                )
+            """)
+
+            # 创建MACD数据表的索引
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_macd_code ON macd_data(code)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_macd_time ON macd_data(time)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_macd_code_time ON macd_data(code, time)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_macd_instrument_type ON macd_data(instrument_type)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_macd_signal_type ON macd_data(signal_type)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_macd_notification_sent ON macd_data(notification_sent)")
+
             conn.commit()
     
     def _get_table_name(self, period: str, year_month: str) -> str:
@@ -397,6 +422,7 @@ class IndustryDataDB:
             """, (etf_code, etf_type, etf_name))
             conn.commit()
     
+    
     def get_stock_info(self, code: str = None) -> pd.DataFrame:
         """
         获取股票/板块信息
@@ -512,3 +538,299 @@ class IndustryDataDB:
             conn.commit()
             
         print(f"清理完成，删除了 {len(tables_to_drop)} 个表")
+
+    def get_today_30m_data(self, code: str) -> pd.DataFrame:
+        """
+        根据给定的code，读取当天1分钟数据，然后转换成30分钟数据
+
+        Args:
+            code: 股票/板块代码
+
+        Returns:
+            转换后的30分钟K线数据DataFrame
+        """
+        from datetime import date
+
+        # 获取今天的日期
+        today = date.today().strftime('%Y-%m-%d')
+
+        # 读取当天1分钟数据
+        df_1m = self.query_kline_data(
+            period='1m',
+            code=code,
+            start_date=today,
+            end_date=today
+        )
+
+        if df_1m.empty:
+            print(f"未找到代码 {code} 当天的1分钟数据")
+            return pd.DataFrame()
+
+        # 确保datetime列是datetime类型
+        df_1m['datetime'] = pd.to_datetime(df_1m['datetime'])
+        df_1m = df_1m.sort_values('datetime').reset_index(drop=True)
+
+        # 转换为30分钟数据
+        df_30m = self._convert_to_30m(df_1m)
+
+        return df_30m
+
+    def _convert_to_30m(self, df_1m: pd.DataFrame) -> pd.DataFrame:
+        """
+        将1分钟K线数据转换为30分钟K线数据
+        返回与数据库查询结果一致的列名和数据结构
+
+        Args:
+            df_1m: 1分钟K线数据DataFrame
+
+        Returns:
+            30分钟K线数据DataFrame，列名与数据库表结构一致
+        """
+        if df_1m.empty:
+            return pd.DataFrame()
+
+        # 按30分钟间隔分组（使用ceil符合股票市场K线标准）
+        df_1m['time_group'] = df_1m['datetime'].dt.ceil('30min')
+
+        # 分组聚合
+        result = []
+
+        for _, group in df_1m.groupby('time_group'):
+            if group.empty:
+                continue
+
+            # 从该时间段的1分钟数据中取第一个记录的ID作为30分钟数据的ID
+            # 这样保持了与原始数据的关联性
+            first_record_id = group['id'].iloc[0] if 'id' in group.columns else None
+
+            # 获取30分钟K线的OHLCV数据，使用与数据库一致的列名
+            kline_30m = {
+                'id': first_record_id,  # 使用原始1分钟数据的第一个ID
+                'code': group['code'].iloc[0],
+                'name': group['name'].iloc[0],
+                'datetime': group['time_group'].iloc[0].strftime('%Y-%m-%d %H:%M:%S'),
+                'open_price': group['open_price'].iloc[0],  # 使用与数据库一致的列名
+                'high_price': group['high_price'].max(),   # 使用与数据库一致的列名
+                'low_price': group['low_price'].min(),     # 使用与数据库一致的列名
+                'close_price': group['close_price'].iloc[-1],  # 使用与数据库一致的列名
+                'volume': group['volume'].iloc[-1] - group['volume'].iloc[0],  # 成交量差值（增量）
+                'amount': group['amount'].iloc[-1] - group['amount'].iloc[0],   # 成交额差值（增量）
+                'created_at': pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')  # 添加创建时间字段
+            }
+            result.append(kline_30m)
+
+        # 转换为DataFrame
+        df_30m = pd.DataFrame(result)
+
+        if not df_30m.empty:
+            # 按时间排序
+            df_30m['datetime'] = pd.to_datetime(df_30m['datetime'])
+            df_30m = df_30m.sort_values('datetime').reset_index(drop=True)
+            # 格式化datetime列为字符串
+            df_30m['datetime'] = df_30m['datetime'].dt.strftime('%Y-%m-%d %H:%M:%S')
+            # 确保created_at也是字符串格式
+            df_30m['created_at'] = pd.to_datetime(df_30m['created_at']).dt.strftime('%Y-%m-%d %H:%M:%S')
+
+            # 重新排列列的顺序，使其与数据库查询结果一致
+            desired_columns = [
+                'id', 'code', 'name', 'datetime',
+                'open_price', 'high_price', 'low_price', 'close_price',
+                'volume', 'amount', 'created_at'
+            ]
+            df_30m = df_30m[desired_columns]
+
+        return df_30m
+
+    def insert_macd_data(self, data: List[Dict], instrument_type: str = None, signal_type: str = None) -> int:
+        """
+        插入MACD数据
+
+        Args:
+            data: MACD数据列表，每个元素包含: code, name, time, macd, signal
+            instrument_type: 产品类型 (stock, etf, index等)
+            signal_type: 信号类型 (金叉, 死叉, 底部收敛等)
+
+        Returns:
+            成功插入的记录数
+        """
+        if not data:
+            return 0
+
+        inserted_count = 0
+        # 获取当前本地时间
+        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+        with self.get_connection() as conn:
+            for record in data:
+                try:
+                    conn.execute("""
+                        INSERT OR REPLACE INTO macd_data
+                        (code, name, time, macd, signal, instrument_type, signal_type, notification_sent, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        record['code'],
+                        record['name'],
+                        record['time'],
+                        record['macd'],
+                        record['signal'],
+                        instrument_type,
+                        signal_type,
+                        0,  # 默认未发送通知
+                        current_time  # 显式插入当前本地时间
+                    ))
+                    inserted_count += 1
+                except sqlite3.Error as e:
+                    print(f"插入MACD数据失败: {e}, 记录: {record}")
+                    continue
+
+            conn.commit()
+
+        return inserted_count
+
+    def query_macd_data(self, code: str = None, start_time: str = None,
+                       end_time: str = None, instrument_type: str = None,
+                       signal_type: str = None, limit: int = None) -> pd.DataFrame:
+        """
+        查询MACD数据
+
+        Args:
+            code: 产品代码，为None时查询所有
+            start_time: 开始时间 (格式: YYYY-MM-DD HH:MM:SS)
+            end_time: 结束时间 (格式: YYYY-MM-DD HH:MM:SS)
+            instrument_type: 产品类型 (stock, etf, index等)
+            signal_type: 信号类型 (金叉, 死叉, 底部收敛等)
+            limit: 限制返回记录数
+
+        Returns:
+            包含MACD数据的DataFrame
+        """
+        with self.get_connection() as conn:
+            sql = "SELECT * FROM macd_data WHERE 1=1"
+            params = []
+
+            if code:
+                sql += " AND code = ?"
+                params.append(code)
+
+            if start_time:
+                sql += " AND time >= ?"
+                params.append(start_time)
+
+            if end_time:
+                sql += " AND time <= ?"
+                params.append(end_time)
+
+            if instrument_type:
+                sql += " AND instrument_type = ?"
+                params.append(instrument_type)
+
+            if signal_type:
+                sql += " AND signal_type = ?"
+                params.append(signal_type)
+
+            sql += " ORDER BY time DESC"
+
+            if limit:
+                sql += f" LIMIT {limit}"
+
+            try:
+                df = pd.read_sql_query(sql, conn, params=params)
+                return df
+            except sqlite3.Error as e:
+                print(f"查询MACD数据失败: {e}")
+                return pd.DataFrame()
+
+    def update_notification_status(self, code: str, time: str, instrument_type: str = None,
+                                  signal_type: str = None, sent: bool = True) -> bool:
+        """
+        更新MACD数据的通知状态
+
+        Args:
+            code: 产品代码
+            time: 时间
+            instrument_type: 产品类型
+            signal_type: 信号类型
+            sent: 是否已发送通知
+
+        Returns:
+            是否更新成功
+        """
+        with self.get_connection() as conn:
+            try:
+                sent_value = 1 if sent else 0
+                if instrument_type and signal_type:
+                    conn.execute("""
+                        UPDATE macd_data
+                        SET notification_sent = ?
+                        WHERE code = ? AND time = ? AND instrument_type = ? AND signal_type = ?
+                    """, (sent_value, code, time, instrument_type, signal_type))
+                else:
+                    conn.execute("""
+                        UPDATE macd_data
+                        SET notification_sent = ?
+                        WHERE code = ? AND time = ?
+                    """, (sent_value, code, time))
+
+                conn.commit()
+                return conn.total_changes > 0
+            except sqlite3.Error as e:
+                print(f"更新通知状态失败: {e}")
+                return False
+
+    def get_unnotified_data(self, instrument_type: str = None, signal_type: str = None, limit: int = None) -> pd.DataFrame:
+        """
+        获取未发送通知的MACD数据
+
+        Args:
+            instrument_type: 产品类型
+            signal_type: 信号类型
+            limit: 限制返回记录数
+
+        Returns:
+            未发送通知的MACD数据DataFrame
+        """
+        with self.get_connection() as conn:
+            sql = "SELECT * FROM macd_data WHERE notification_sent = 0"
+            params = []
+
+            if instrument_type:
+                sql += " AND instrument_type = ?"
+                params.append(instrument_type)
+
+            if signal_type:
+                sql += " AND signal_type = ?"
+                params.append(signal_type)
+
+            sql += " ORDER BY time ASC"
+
+            if limit:
+                sql += f" LIMIT {limit}"
+
+            try:
+                df = pd.read_sql_query(sql, conn, params=params)
+                return df
+            except sqlite3.Error as e:
+                print(f"查询未通知数据失败: {e}")
+                return pd.DataFrame()
+
+    def clear_all_macd_data(self) -> int:
+        """
+        清空所有MACD数据
+
+        Returns:
+            成功删除的记录数
+        """
+        with self.get_connection() as conn:
+            try:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM macd_data")
+                deleted_count = cursor.rowcount
+                conn.commit()
+
+                print(f"成功清空所有MACD数据，共删除 {deleted_count} 条记录")
+                return deleted_count
+
+            except sqlite3.Error as e:
+                print(f"清空所有MACD数据失败: {e}")
+                return 0
+

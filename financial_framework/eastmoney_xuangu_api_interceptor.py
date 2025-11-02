@@ -2,13 +2,16 @@
 东方财富选股 search-code API 拦截器
 
 使用 Selenium 拦截东方财富选股页面的 search-code API
-目标API: https://np-tjxg-g.eastmoney.com/api/smart-tag/stock/v3/pw/search-code
+目标API: https://*.eastmoney.com/api/smart-tag/stock/v3/pw/search-code
+       （支持动态子域名，如 np-tjxg-g.eastmoney.com, np-tjxg-h.eastmoney.com 等）
 
 特点：
 1. 只拦截 search-code API
-2. 过滤掉流式响应中无数据的响应
-3. 每5分钟自动刷新页面
-4. 使用统一日志系统记录所有操作
+2. 支持动态子域名匹配，适应负载均衡和CDN变化
+3. 过滤掉流式响应中无数据的响应
+4. 每5分钟自动刷新页面
+5. 使用统一日志系统记录所有操作
+6. 支持 stock, etf, fund, bond 多种数据类型
 """
 
 import time
@@ -19,6 +22,7 @@ import random
 import string
 import csv
 import os
+from urllib.parse import urlparse
 
 # 导入日志系统
 try:
@@ -51,7 +55,14 @@ class EastmoneySearchCodeInterceptor:
             logger_name='financial_framework.eastmoney_interceptor.browser'
         )
 
-              # API URL映射表
+        # API URL模式映射表（支持动态子域名）
+        self.api_url_patterns = {
+            "stock": "https://*.eastmoney.com/api/smart-tag/stock/v3/pw/search-code",
+            "etf": "https://*.eastmoney.com/api/smart-tag/etf/v3/pw/search-code",
+            "fund": "https://*.eastmoney.com/api/smart-tag/fund/v3/pw/search-code",
+            "bond": "https://*.eastmoney.com/api/smart-tag/bond/v3/pw/search-code"
+        }
+        # 为了向后兼容，保留原有的完整URL映射
         self.api_url_map = {
             "stock": "https://np-tjxg-g.eastmoney.com/api/smart-tag/stock/v3/pw/search-code",
             "etf": "https://np-tjxg-g.eastmoney.com/api/smart-tag/etf/v3/pw/search-code",
@@ -69,6 +80,46 @@ class EastmoneySearchCodeInterceptor:
         self.logger.info(f"日志配置: 完整数据={log_full_data}, 仅摘要={log_summary_only}")
         self.browser_manager.init_driver()
 
+    def _matches_api_pattern(self, url: str) -> bool:
+        """
+        检查URL是否匹配API模式（支持动态子域名）
+        :param url: 要检查的URL
+        :return: 是否匹配
+        """
+        if not url:
+            return False
+
+        # 提取URL的路径部分进行匹配
+        # 例如：https://np-tjxg-g.eastmoney.com/api/smart-tag/stock/v3/pw/search-code
+        # 匹配模式：https://*.eastmoney.com/api/smart-tag/stock/v3/pw/search-code
+
+        try:
+            parsed_url = urlparse(url)
+            domain = parsed_url.netloc
+            path = parsed_url.path
+
+            # 检查是否是 eastmoney.com 域名
+            if not domain.endswith('eastmoney.com'):
+                return False
+
+            # 检查路径是否匹配 API 模式
+            expected_paths = [
+                '/api/smart-tag/stock/v3/pw/search-code',
+                '/api/smart-tag/etf/v3/pw/search-code',
+                '/api/smart-tag/fund/v3/pw/search-code',
+                '/api/smart-tag/bond/v3/pw/search-code'
+            ]
+
+            return path in expected_paths
+        except Exception:
+            # 如果解析失败，回退到字符串匹配
+            return any(pattern in url for pattern in [
+                'eastmoney.com/api/smart-tag/stock/v3/pw/search-code',
+                'eastmoney.com/api/smart-tag/etf/v3/pw/search-code',
+                'eastmoney.com/api/smart-tag/fund/v3/pw/search-code',
+                'eastmoney.com/api/smart-tag/bond/v3/pw/search-code'
+            ])
+
     def start_interception(self, xuangu_id="xc0d27d74884930004d1", color="w", action="edit_way",
                           type="stock", check_interval=1, refresh_interval=300):
         """
@@ -81,13 +132,16 @@ class EastmoneySearchCodeInterceptor:
         :param refresh_interval: 刷新页面的时间间隔（秒），默认300秒（5分钟）
         """
         try:
-            # 根据type设置正确的API URL
+            # 根据type设置正确的API URL和模式
             if type in self.api_url_map:
                 self.target_api_url = self.api_url_map[type]
+                self.target_api_pattern = self.api_url_patterns[type]
                 self.logger.info(f"根据type={type}设置API URL: {self.target_api_url}")
+                self.logger.info(f"API匹配模式: {self.target_api_pattern}")
             else:
                 self.logger.warning(f"未知的type: {type}，使用默认的stock API URL")
                 self.target_api_url = self.api_url_map["stock"]
+                self.target_api_pattern = self.api_url_patterns["stock"]
 
             # 构造目标URL
             url = f"https://xuangu.eastmoney.com/Result?type={type}&color={color}&id={xuangu_id}&a={action}"
@@ -150,8 +204,8 @@ class EastmoneySearchCodeInterceptor:
                             request_id = params.get('requestId', '')
                             url_sent = request.get('url', '')
 
-                            # 只处理 search-code API 的请求
-                            if self.target_api_url in url_sent:
+                            # 只处理 search-code API 的请求（支持动态子域名）
+                            if self._matches_api_pattern(url_sent):
                                 pending_requests[request_id] = {
                                     'request_url': url_sent,
                                     'request_method': request.get('method', ''),
@@ -169,8 +223,8 @@ class EastmoneySearchCodeInterceptor:
                             status = response.get('status', 0)
                             mime_type = response.get('mimeType', '')
 
-                            # 只处理 search-code API
-                            if self.target_api_url in url_received and request_id not in processed_request_ids:
+                            # 只处理 search-code API（支持动态子域名）
+                            if self._matches_api_pattern(url_received) and request_id not in processed_request_ids:
                                 processed_request_ids.add(request_id)
 
                                 # 尝试获取响应内容
@@ -643,13 +697,16 @@ class EastmoneySearchCodeInterceptor:
         :param max_refresh_attempts: 最大刷新尝试次数（包含首次访问）
         """
         try:
-            # 根据type设置正确的API URL
+            # 根据type设置正确的API URL和模式
             if type in self.api_url_map:
                 self.target_api_url = self.api_url_map[type]
+                self.target_api_pattern = self.api_url_patterns[type]
                 self.logger.info(f"根据type={type}设置API URL: {self.target_api_url}")
+                self.logger.info(f"API匹配模式: {self.target_api_pattern}")
             else:
                 self.logger.warning(f"未知的type: {type}，使用默认的stock API URL")
                 self.target_api_url = self.api_url_map["stock"]
+                self.target_api_pattern = self.api_url_patterns["stock"]
 
             # 构造目标URL
             url = f"https://xuangu.eastmoney.com/Result?type={type}&color={color}&id={xuangu_id}&a={action}"
@@ -718,8 +775,8 @@ class EastmoneySearchCodeInterceptor:
                             request_id = params.get('requestId', '')
                             url_sent = request.get('url', '')
 
-                            # 只处理 search-code API 的请求
-                            if self.target_api_url in url_sent:
+                            # 只处理 search-code API 的请求（支持动态子域名）
+                            if self._matches_api_pattern(url_sent):
                                 pending_requests[request_id] = {
                                     'request_url': url_sent,
                                     'request_method': request.get('method', ''),
@@ -737,8 +794,8 @@ class EastmoneySearchCodeInterceptor:
                             status = response.get('status', 0)
                             mime_type = response.get('mimeType', '')
 
-                            # 只处理 search-code API
-                            if self.target_api_url in url_received and request_id not in processed_request_ids:
+                            # 只处理 search-code API（支持动态子域名）
+                            if self._matches_api_pattern(url_received) and request_id not in processed_request_ids:
                                 processed_request_ids.add(request_id)
 
                                 # 尝试获取响应内容

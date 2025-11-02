@@ -278,58 +278,39 @@ class UnifiedAnalyzer:
             try:
                 # 使用UnifiedAnalyzer的analyze_macd方法返回金叉信号数据列表
                 golden_cross_data = self.analyze_macd(instrument_info, instrument_type)
+
                 if golden_cross_data:
                     all_golden_cross_data.extend(golden_cross_data)
             except Exception as e:
                 print(f"分析{instrument_info.get('name', '')}失败: {e}")
 
-        # 统一保存所有金叉信号到CSV
+        # 统一保存所有金叉信号到数据库并发送通知
         if all_golden_cross_data:
-            today = datetime.now().strftime('%Y-%m-%d')
-            self._save_golden_cross_to_csv(all_golden_cross_data, instrument_type, today)
-            print(f"共收集到 {len(all_golden_cross_data)} 个金叉信号，已保存到CSV")
+            # 保存到数据库
+            saved_count = self.db.insert_macd_data(all_golden_cross_data, instrument_type, "金叉")
+            print(f"已保存 {saved_count} 条MACD金叉信号到数据库")
+
+            # 发送通知
+            for signal_data in all_golden_cross_data:
+                self.send_macd_notification(
+                    name=signal_data['name'],
+                    signal_data={
+                        'time': signal_data['time'],
+                        'macd': signal_data['macd'],
+                        'signal': signal_data['signal']
+                    },
+                    code=signal_data['code'],
+                    instrument_type=instrument_type,
+                    signal_type="金叉"
+                )
+
+            print(f"共收集到 {len(all_golden_cross_data)} 个金叉信号，已保存到数据库并发送通知")
         else:
             print("未发现金叉信号")
 
         print(f"{instrument.get_instrument_type()}分析完成")
 
-    def _save_golden_cross_to_csv(self, data, instrument_type, date_str):
-        """将金叉信号保存到CSV文件
-
-        Args:
-            data: 金叉信号数据列表
-            instrument_type: 产品类型
-            date_str: 日期字符串
-        """
-        try:
-            # 使用FilePathGenerator生成文件路径
-            filepath = FilePathGenerator.generate_macd_signal_path(
-                instrument_type=instrument_type,
-                period="30m",
-                date=date_str
-            )
-
-            # 确保目录存在
-            FilePathGenerator.ensure_directory_exists(filepath)
-
-            # 创建DataFrame
-            df = pd.DataFrame(data)
-
-            # 如果文件已存在，追加数据；否则创建新文件
-            if os.path.exists(filepath):
-                # 读取现有数据
-                existing_df = pd.read_csv(filepath)
-                # 合并数据并去重(基于code和time)
-                df = pd.concat([existing_df, df], ignore_index=True)
-                df = df.drop_duplicates(subset=['code', 'time'], keep='last')
-
-            # 保存到CSV
-            df.to_csv(filepath, index=False, encoding='utf-8-sig')
-            print(f"金叉信号已保存到文件: {filepath}")
-
-        except Exception as e:
-            print(f"保存金叉信号到CSV失败: {e}")
-
+  
     def calculate_macd(self, close_prices, fast=12, slow=26, signal=9):
         """计算MACD指标"""
         if len(close_prices) < slow:
@@ -381,6 +362,104 @@ class UnifiedAnalyzer:
 
         return signals
 
+    def merge_30m_data_with_priority(self, data_historical, data_today, instrument_name):
+        """
+        合并历史30分钟数据和今日30分钟数据，处理时间重复问题
+
+        Args:
+            data_historical: 历史数据DataFrame (data_30m)
+            data_today: 今日数据DataFrame (data_30m_toady)
+            instrument_name: 产品名称，用于日志输出
+
+        Returns:
+            合并后的DataFrame，以历史数据为准
+        """
+        if data_historical is None or data_historical.empty:
+            if data_today is None or data_today.empty:
+                print(f"{instrument_name}: 无法获取任何30分钟数据")
+                return None
+            else:
+                print(f"{instrument_name}: 仅使用今日30分钟数据")
+                return data_today
+
+        if data_today is None or data_today.empty:
+            print(f"{instrument_name}: 仅使用历史30分钟数据")
+            return data_historical
+
+        # 转换datetime列为datetime类型以便比较
+        data_historical = data_historical.copy()
+        data_today = data_today.copy()
+
+        data_historical['datetime'] = pd.to_datetime(data_historical['datetime'])
+        data_today['datetime'] = pd.to_datetime(data_today['datetime'])
+
+        # 找出今日数据中不在历史数据中的时间点
+        historical_times = set(data_historical['datetime'])
+        new_data_mask = ~data_today['datetime'].isin(historical_times)
+        new_data = data_today[new_data_mask]
+
+        if not new_data.empty:
+            print(f"{instrument_name}: 从今日数据中补充 {len(new_data)} 条新的30分钟数据")
+            # 合并数据，历史数据在前，新增数据在后
+            combined_data = pd.concat([data_historical, new_data], ignore_index=True)
+        else:
+            print(f"{instrument_name}: 今日数据已包含在历史数据中，无需补充")
+            combined_data = data_historical
+
+        # 按时间排序合并后的数据
+        combined_data = combined_data.sort_values('datetime').reset_index(drop=True)
+        return combined_data
+
+    def send_macd_notification(self, name, signal_data, code, instrument_type, signal_type):
+        """发送MACD信号通知，先查询是否已发送过
+
+        Args:
+            name: 产品名称
+            signal_data: 信号数据字典，包含time, macd, signal等信息
+            code: 产品代码
+            instrument_type: 产品类型 (stock, etf, index等)
+            signal_type: 信号类型 (金叉, 死叉, 底部收敛等)
+        """
+        try:
+            # 查询数据库是否已经发送过通知
+            time_str = signal_data['time'].strftime('%Y-%m-%d %H:%M:%S') if hasattr(signal_data['time'], 'strftime') else str(signal_data['time'])
+
+            existing_data = self.db.query_macd_data(
+                code=code,
+                start_time=time_str,
+                end_time=time_str,
+                instrument_type=instrument_type,
+                signal_type=signal_type,
+                limit=1
+            )
+
+            # 检查是否已经发送过通知
+            if not existing_data.empty and existing_data.iloc[0]['notification_sent'] == 1:
+                print(f"{name} 的{signal_type}信号已发送过通知，跳过")
+                return
+
+            # 构建通知消息
+            message = f"{name} 30分钟MACD{signal_type}信号\n时间: {signal_data['time']}\nMACD: {signal_data['macd']:.4f}\nSignal: {signal_data['signal']:.4f}"
+
+            # 打印消息
+            print(message)
+
+            # 发送推送通知
+            if hasattr(settings, 'ENABLE_PUSH_NOTIFICATION') and settings.ENABLE_PUSH_NOTIFICATION:
+                push.send(message)
+                print(f"已发送{signal_type}通知: {name}")
+                # 更新数据库中的通知状态
+                self.db.update_notification_status(
+                    code=code,
+                    time=time_str,
+                    instrument_type=instrument_type,
+                    signal_type=signal_type,
+                    sent=True
+                )
+
+        except Exception as e:
+            print(f"发送MACD通知失败: {e}")
+
     def analyze_macd(self, instrument_info, instrument_type="unknown"):
         """分析30分钟级别MACD，返回金叉信号数据
 
@@ -396,31 +475,35 @@ class UnifiedAnalyzer:
 
         # 从数据库获取30分钟数据
         data_30m = self.db.query_kline_data('30m', code=code)
+        data_30m_toady = self.db.get_today_30m_data(code=code)
 
-        if data_30m is None or len(data_30m) < 26:
+        # 合并数据，处理时间重复问题（以历史数据为准）
+        combined_data = self.merge_30m_data_with_priority(data_30m, data_30m_toady, name)
+
+        if combined_data is None or len(combined_data) < 26:
             print(f"{name}: 30分钟数据不足，无法计算MACD")
             return []
 
         # 重命名列以匹配计算所需格式
-        data_30m = data_30m.rename(columns={
+        combined_data = combined_data.rename(columns={
             'datetime': '日期时间',
             'close_price': '收盘'
         })
-        data_30m['日期时间'] = pd.to_datetime(data_30m['日期时间'])
+        combined_data['日期时间'] = pd.to_datetime(combined_data['日期时间'])
 
-        close_prices = data_30m['收盘']
+        close_prices = combined_data['收盘']
         macd_line, signal_line, _ = self.calculate_macd(close_prices, 5, 13, 5)
 
         if macd_line is None:
             return []
 
-        signals = self.detect_macd_signals(macd_line, signal_line, data_30m['日期时间'])
+        signals = self.detect_macd_signals(macd_line, signal_line, combined_data['日期时间'])
         if not signals:
             return []
 
         # 筛选当天的金叉信号
-        # today = datetime.now().strftime('%Y-%m-%d')
-        today = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+        today = datetime.now().strftime('%Y-%m-%d')
+        # today = (datetime.now() - timedelta(days=2)).strftime('%Y-%m-%d')
         today_golden_cross_signals = []
 
         for signal in signals:
@@ -435,7 +518,6 @@ class UnifiedAnalyzer:
 
         if today_golden_cross_signals:
             print(f"\n{name} 当天30分钟MACD金叉信号:")
-
             # 准备返回的数据
             csv_data = []
             for signal in today_golden_cross_signals:
@@ -470,18 +552,22 @@ class UnifiedAnalyzer:
 
         # 从数据库获取30分钟数据
         data_30m = self.db.query_kline_data('30m', code=code)
+        data_30m_toady = self.db.get_today_30m_data(code=code)
+        
+        # 合并数据，处理时间重复问题（以历史数据为准）
+        combined_data = self.merge_30m_data_with_priority(data_30m, data_30m_toady, name)
 
-        if data_30m is None or len(data_30m) < 30:
+        if combined_data is None or len(combined_data) < 30:
             return []
 
         # 重命名列以匹配计算所需格式
-        data_30m = data_30m.rename(columns={
+        combined_data = combined_data.rename(columns={
             'datetime': '日期时间',
             'close_price': '收盘'
         })
-        data_30m['日期时间'] = pd.to_datetime(data_30m['日期时间'])
+        combined_data['日期时间'] = pd.to_datetime(combined_data['日期时间'])
 
-        close_prices = data_30m['收盘']
+        close_prices = combined_data['收盘']
         print(close_prices)
         macd_line, signal_line, _ = self.calculate_macd(close_prices, 5, 13, 5)
         print(macd_line)
@@ -529,7 +615,7 @@ class UnifiedAnalyzer:
 
                 # 检查差值是否在逐渐缩小
                 if diff_current < diff_prev and diff_prev < diff_prev2:
-                    timestamp = data_30m.iloc[i]['日期时间']
+                    timestamp = combined_data.iloc[i]['日期时间']
 
                     convergence_signals.append({
                         'code': code,
@@ -579,11 +665,27 @@ class UnifiedAnalyzer:
             except Exception as e:
                 print(f"分析{instrument_info.get('name', '')}的底部收敛模式失败: {e}")
 
-        # 统一保存所有底部收敛信号到CSV（使用与金叉信号相同的格式）
+        # 统一保存所有底部收敛信号到数据库
         if all_convergence_data:
-            today = datetime.now().strftime('%Y-%m-%d')
-            self._save_golden_cross_to_csv(all_convergence_data, instrument_type, today)
-            print(f"共收集到 {len(all_convergence_data)} 个底部收敛信号，已保存到CSV")
+            # 保存到数据库
+            saved_count = self.db.insert_macd_data(all_convergence_data, instrument_type, "底部收敛")
+            print(f"已保存 {saved_count} 条MACD底部收敛信号到数据库")
+
+            # 发送通知
+            for signal_data in all_convergence_data:
+                self.send_macd_notification(
+                    name=signal_data['name'],
+                    signal_data={
+                        'time': signal_data['time'],
+                        'macd': signal_data['macd'],
+                        'signal': signal_data['signal']
+                    },
+                    code=signal_data['code'],
+                    instrument_type=instrument_type,
+                    signal_type="底部收敛"
+                )
+
+            print(f"共收集到 {len(all_convergence_data)} 个底部收敛信号，已保存到数据库并发送通知")
         else:
             print("未发现底部收敛信号")
 
@@ -1279,49 +1381,44 @@ class TechnicalAnalyzer:
         else:
             return "✅ 技术指标相对正常，可按既定策略操作"
 
-    def analyze_instruments_from_macd_file(self, instrument_type, date_str=None):
+    def analyze_instruments_from_macd_data(self, instrument_type, date_str=None):
         """
-        从MACD信号文件读取数据并执行综合技术分析
+        从MACD数据表读取数据并执行综合技术分析
 
         Args:
             instrument_type: 产品类型 ('industry_sector', 'stock', 'etf', 'concept_sector', 'index')
-            date_str: 日期字符串，格式为 YYYY-MM-DD，如果为None则使用今天
+            date_str: 日期字符串，格式为 YYYY-MM-DD，如果为None则使用前天
 
         Returns:
             dict: 包含所有分析结果的字典
         """
-        from datetime import datetime
+        from datetime import datetime, timedelta
 
         if date_str is None:
-            date_str = datetime.now().strftime("%Y-%m-%d")
+            # 默认使用前天的数据（与financial_instruments.py保持一致）
+            date_str = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d")
 
-        # 使用FilePathGenerator生成文件路径
-        filepath = FilePathGenerator.generate_macd_signal_path(
-            instrument_type=instrument_type,
-            period="30m",
-            date=date_str
-        )
-
-        print(f"读取MACD信号文件: {filepath}")
-
-        # 检查文件是否存在
-        if not os.path.exists(filepath):
-            return {"error": f"MACD信号文件不存在: {filepath}"}
+        print(f"从macd_data表读取数据，产品类型: {instrument_type}, 日期: {date_str}")
 
         try:
-            # 读取CSV文件，将code列作为字符串读取以保持前导零
-            macd_data = pd.read_csv(filepath, dtype={'code': str})
-            if macd_data.empty:
-                return {"error": f"MACD信号文件为空: {filepath}"}
+            # 从macd_data表查询指定日期和产品类型的数据
+            macd_df = self.db.query_macd_data(
+                start_time=f"{date_str} 00:00:00",
+                end_time=f"{date_str} 23:59:59",
+                instrument_type=instrument_type.replace('_sector', '')  # 转换为数据库中的格式
+            )
 
-            print(f"成功读取 {len(macd_data)} 条MACD信号数据")
+            if macd_df.empty:
+                return {"error": f"macd_data表中没有找到{instrument_type}类型在{date_str}的数据"}
 
-            # 获取所有独特的股票代码作为列表变量
-            if 'code' in macd_data.columns:
-                instrument_codes = macd_data['code'].unique().tolist()
+            print(f"成功读取 {len(macd_df)} 条MACD信号数据")
+
+            # 获取所有独特的产品代码作为列表变量
+            if 'code' in macd_df.columns:
+                instrument_codes = macd_df['code'].unique().tolist()
                 print(f"发现 {len(instrument_codes)} 个独特的金融产品代码")
             else:
-                return {"error": "MACD信号文件中没有找到'code'列"}
+                return {"error": "macd_data中没有找到'code'列"}
 
             # 为每个代码执行综合技术分析
             all_analysis_results = []
@@ -1339,7 +1436,7 @@ class TechnicalAnalyzer:
                     )
 
                     if "error" not in analysis_result:
-                        analysis_result["分析来源"] = "MACD信号文件"
+                        analysis_result["分析来源"] = "MACD数据表"
                         analysis_result["MACD信号日期"] = date_str
                         analysis_result["产品类型"] = instrument_type
                         all_analysis_results.append(analysis_result)
@@ -1386,7 +1483,7 @@ class TechnicalAnalyzer:
             return result_data
 
         except Exception as e:
-            return {"error": f"处理MACD信号文件失败: {str(e)}"}
+            return {"error": f"处理MACD数据失败: {str(e)}"}
 
 
 # 兼容性类，保持原有接口

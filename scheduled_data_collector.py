@@ -110,7 +110,7 @@ def generate_stock_data():
 
         # 调用拦截函数获取股票数据
         success = interceptor.intercept_and_save_to_csv(
-            xuangu_id="xc0d3858a90493012efd",
+            xuangu_id="xc0d80aece1307005f65",
             color="w",
             action="edit_way",
             type="stock",                     # 股票数据类型
@@ -202,10 +202,10 @@ def scheduled_data_collection():
     logger.info("结束获取stock 1d数据")
     technicalAnalyzer = TechnicalAnalyzer()
     logger.info("开始分析etf dayK")
-    technicalAnalyzer.analyze_instruments_from_macd_file('etf')
+    technicalAnalyzer.analyze_instruments_from_macd_data('etf')
     logger.info("结束分析etf dayK")
     logger.info("开始分析stock dayK")
-    technicalAnalyzer.analyze_instruments_from_macd_file('stock')
+    technicalAnalyzer.analyze_instruments_from_macd_data('stock')
     logger.info("结束分析stock dayK")
 
 

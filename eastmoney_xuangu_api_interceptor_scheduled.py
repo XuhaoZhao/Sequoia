@@ -2,13 +2,16 @@
 东方财富选股 search-code API 拦截器
 
 使用 Selenium 拦截东方财富选股页面的 search-code API
-目标API: https://np-tjxg-g.eastmoney.com/api/smart-tag/stock/v3/pw/search-code
+目标API: https://*.eastmoney.com/api/smart-tag/stock/v3/pw/search-code
+       （支持动态子域名，如 np-tjxg-g.eastmoney.com, np-tjxg-h.eastmoney.com 等）
 
 特点：
 1. 只拦截 search-code API
-2. 过滤掉流式响应中无数据的响应
-3. 每5分钟自动刷新页面
-4. 使用统一日志系统记录所有操作
+2. 支持动态子域名匹配，适应负载均衡和CDN变化
+3. 过滤掉流式响应中无数据的响应
+4. 每5分钟自动刷新页面
+5. 使用统一日志系统记录所有操作
+6. 支持 stock, etf, fund, bond 多种数据类型
 """
 
 import time
@@ -62,13 +65,21 @@ class EastmoneySearchCodeInterceptor:
             self.use_database = False
             self.db = None
 
-              # API URL映射表
+              # API URL模式映射表（支持动态子域名）
+        self.api_url_patterns = {
+            "stock": "https://*.eastmoney.com/api/smart-tag/stock/v3/pw/search-code",
+            "etf": "https://*.eastmoney.com/api/smart-tag/etf/v3/pw/search-code",
+            "fund": "https://*.eastmoney.com/api/smart-tag/fund/v3/pw/search-code",
+            "bond": "https://*.eastmoney.com/api/smart-tag/bond/v3/pw/search-code"
+        }
+        # 为了向后兼容，保留原有的完整URL映射
         self.api_url_map = {
             "stock": "https://np-tjxg-g.eastmoney.com/api/smart-tag/stock/v3/pw/search-code",
             "etf": "https://np-tjxg-g.eastmoney.com/api/smart-tag/etf/v3/pw/search-code",
             "fund": "https://np-tjxg-g.eastmoney.com/api/smart-tag/fund/v3/pw/search-code",
             "bond": "https://np-tjxg-g.eastmoney.com/api/smart-tag/bond/v3/pw/search-code"
         }
+        self.target_api_pattern = self.api_url_patterns.get("stock", self.api_url_patterns["stock"])  # 默认使用stock类型
         self.target_api_url = self.api_url_map.get("stock", self.api_url_map["stock"])  # 默认使用stock类型
         self.requested_pages = set()  # 用于跟踪已请求过的页码,避免重复请求
 
@@ -80,6 +91,46 @@ class EastmoneySearchCodeInterceptor:
         self.logger.info(f"日志配置: 完整数据={log_full_data}, 仅摘要={log_summary_only}")
         self.browser_manager.init_driver()
 
+    def _matches_api_pattern(self, url: str) -> bool:
+        """
+        检查URL是否匹配API模式（支持动态子域名）
+        :param url: 要检查的URL
+        :return: 是否匹配
+        """
+        if not url:
+            return False
+
+        # 提取URL的路径部分进行匹配
+        # 例如：https://np-tjxg-g.eastmoney.com/api/smart-tag/stock/v3/pw/search-code
+        # 匹配模式：https://*.eastmoney.com/api/smart-tag/stock/v3/pw/search-code
+
+        try:
+            from urllib.parse import urlparse
+            parsed_url = urlparse(url)
+            domain = parsed_url.netloc
+            path = parsed_url.path
+
+            # 检查是否是 eastmoney.com 域名
+            if not domain.endswith('eastmoney.com'):
+                return False
+
+            # 检查路径是否匹配 API 模式
+            expected_paths = [
+                '/api/smart-tag/stock/v3/pw/search-code',
+                '/api/smart-tag/etf/v3/pw/search-code',
+                '/api/smart-tag/fund/v3/pw/search-code',
+                '/api/smart-tag/bond/v3/pw/search-code'
+            ]
+
+            return path in expected_paths
+        except Exception:
+            # 如果解析失败，回退到字符串匹配
+            return any(pattern in url for pattern in [
+                'eastmoney.com/api/smart-tag/stock/v3/pw/search-code',
+                'eastmoney.com/api/smart-tag/etf/v3/pw/search-code',
+                'eastmoney.com/api/smart-tag/fund/v3/pw/search-code',
+                'eastmoney.com/api/smart-tag/bond/v3/pw/search-code'
+            ])
 
     def _randomize_request_id(self, original_id):
         """
@@ -398,13 +449,16 @@ class EastmoneySearchCodeInterceptor:
         :param max_refresh_attempts: 最大刷新尝试次数（包含首次访问）
         """
         try:
-            # 根据type设置正确的API URL
+            # 根据type设置正确的API URL和模式
             if type in self.api_url_map:
                 self.target_api_url = self.api_url_map[type]
+                self.target_api_pattern = self.api_url_patterns[type]
                 self.logger.info(f"根据type={type}设置API URL: {self.target_api_url}")
+                self.logger.info(f"API匹配模式: {self.target_api_pattern}")
             else:
                 self.logger.warning(f"未知的type: {type}，使用默认的stock API URL")
                 self.target_api_url = self.api_url_map["stock"]
+                self.target_api_pattern = self.api_url_patterns["stock"]
 
             # 构造目标URL
             url = f"https://xuangu.eastmoney.com/Result?type={type}&color={color}&id={xuangu_id}&a={action}"
@@ -479,8 +533,8 @@ class EastmoneySearchCodeInterceptor:
                             request_id = params.get('requestId', '')
                             url_sent = request.get('url', '')
 
-                            # 只处理 search-code API 的请求
-                            if self.target_api_url in url_sent:
+                            # 只处理 search-code API 的请求（支持动态子域名）
+                            if self._matches_api_pattern(url_sent):
                                 pending_requests[request_id] = {
                                     'request_url': url_sent,
                                     'request_method': request.get('method', ''),
@@ -498,8 +552,8 @@ class EastmoneySearchCodeInterceptor:
                             status = response.get('status', 0)
                             mime_type = response.get('mimeType', '')
 
-                            # 只处理 search-code API
-                            if self.target_api_url in url_received and request_id not in processed_request_ids:
+                            # 只处理 search-code API（支持动态子域名）
+                            if self._matches_api_pattern(url_received) and request_id not in processed_request_ids:
                                 processed_request_ids.add(request_id)
 
                                 # 尝试获取响应内容
@@ -964,163 +1018,6 @@ class EastmoneySearchCodeInterceptor:
         finally:
             self._is_requesting_all_pages_db = False
 
-    def _request_next_page_and_save_to_csv(self, request_info, request_json, first_page_response=None, type="stock", csv_file_path="xuangu_data.csv"):
-        """
-        根据第一页的响应数据，自动请求所有分页并保存到CSV文件
-        :param request_info: 原始请求信息
-        :param request_json: 原始请求的JSON数据
-        :param first_page_response: 第一页的响应数据（JSON格式）
-        :param type: 数据类型（默认："stock"）
-        :param csv_file_path: CSV文件保存路径
-        :return: 保存是否成功
-        """
-        try:
-            # 避免重复请求
-            if hasattr(self, '_is_requesting_all_pages_csv') and self._is_requesting_all_pages_csv:
-                return False
-
-            self._is_requesting_all_pages_csv = True
-
-            # 重置分页跟踪，确保每次都能获取完整数据
-            self.requested_pages.clear()
-
-            # 解析第一页数据，获取total和dataList
-            if not first_page_response:
-                self.logger.warning("未提供第一页响应数据，无法请求后续分页")
-                return False
-
-            # 提取total和dataList
-            try:
-                data = first_page_response.get('data', {})
-                result = data.get('result', {})
-                total = result.get('total', 0)
-                first_page_data_list = result.get('dataList', [])
-
-                self.logger.info("=" * 80)
-                self.logger.info(f"第一页数据解析:")
-                self.logger.info(f"  总记录数(total): {total}")
-                self.logger.info(f"  第一页数据条数: {len(first_page_data_list)}")
-                self.logger.info("=" * 80)
-
-                if total == 0:
-                    self.logger.warning("总记录数为0，无需请求后续分页")
-                    return False
-
-                # 收集所有数据
-                all_data_list = first_page_data_list.copy()
-
-            except Exception as e:
-                self.logger.error(f"解析第一页响应数据失败: {e}", exc_info=True)
-                return False
-
-            # 计算总页数
-            page_size = request_json.get('pageSize', 50)
-            total_pages = (total + page_size - 1) // page_size  # 向上取整
-
-            self.logger.info(f"每页大小: {page_size}")
-            self.logger.info(f"计算总页数: {total_pages}")
-            self.logger.info("=" * 80)
-
-            # 如果只有一页，直接保存第一页数据
-            if total_pages <= 1:
-                self.logger.info("只有1页数据，直接保存第一页数据")
-                success = self._save_data_to_csv(all_data_list, csv_file_path)
-                return success
-
-            # 请求后续页面 (从第2页开始)
-            url = request_info['request_url']
-            headers = request_info['request_headers'].copy()
-            headers['Content-Type'] = 'application/json'
-
-            for page_no in range(2, total_pages + 1):
-                # 检查是否已请求过
-                if page_no in self.requested_pages:
-                    continue
-
-                self.requested_pages.add(page_no)
-
-                # 延时1秒，避免请求过快
-                self.logger.info(f"延时1秒后请求第{page_no}页...")
-                time.sleep(1)
-
-                # 复制请求数据
-                next_page_json = request_json.copy()
-
-                # 修改页码
-                if 'pageNo' in next_page_json:
-                    next_page_json['pageNo'] = page_no
-                elif 'pageNum' in next_page_json:
-                    next_page_json['pageNum'] = page_no
-                elif 'page' in next_page_json:
-                    next_page_json['page'] = page_no
-
-                # 随机化requestId，避免反爬
-                if 'requestId' in next_page_json:
-                    next_page_json['requestId'] = self._randomize_request_id(next_page_json['requestId'])
-
-                # 发起请求
-                self.logger.info(f"正在请求第{page_no}/{total_pages}页...")
-                self.logger.info(f"请求URL: {url}")
-
-                try:
-                    response = requests.post(
-                        url,
-                        json=next_page_json,
-                        headers=headers,
-                        timeout=30
-                    )
-
-                    if response.status_code == 200:
-                        self.logger.info(f"✓ 第{page_no}页请求成功! 状态码: {response.status_code}")
-                        self.logger.info(f"✓ 响应大小: {len(response.text)} 字符")
-
-                        # 解析响应数据
-                        try:
-                            page_response_json = response.json()
-                            page_data = page_response_json.get('data', {})
-                            page_result = page_data.get('result', {})
-                            page_data_list = page_result.get('dataList', [])
-
-                            self.logger.info(f"✓ 第{page_no}页数据条数: {len(page_data_list)}")
-
-                            # 收集数据
-                            all_data_list.extend(page_data_list)
-
-                        except Exception as e:
-                            self.logger.error(f"解析第{page_no}页响应数据失败: {e}", exc_info=True)
-                    else:
-                        self.logger.error(f"第{page_no}页请求失败! 状态码: {response.status_code}")
-                        self.logger.error(f"响应内容: {response.text[:200]}")
-
-                except Exception as e:
-                    self.logger.error(f"请求第{page_no}页时发生错误: {e}", exc_info=True)
-
-            # 所有页面请求完成，保存数据到CSV
-            self.logger.info("=" * 80)
-            self.logger.info("所有分页数据收集完成!")
-            self.logger.info(f"总记录数(total): {total}")
-            self.logger.info(f"实际收集到的数据条数: {len(all_data_list)}")
-            self.logger.info("=" * 80)
-
-            success = self._save_data_to_csv(all_data_list, csv_file_path)
-            if success:
-                self.logger.info("✓ 所有分页数据已成功保存到CSV文件")
-            return success
-
-        except Exception as e:
-            self.logger.error(f"请求所有分页时发生错误: {e}", exc_info=True)
-            return False
-        finally:
-            self._is_requesting_all_pages_csv = False
-
-    def add_api_type(self, type_name, api_url):
-        """
-        动态添加新的API类型
-        :param type_name: 类型名称
-        :param api_url: 对应的API URL
-        """
-        self.api_url_map[type_name] = api_url
-        self.logger.info(f"添加新的API类型: {type_name} -> {api_url}")
 
     def get_available_types(self):
         """
@@ -1174,7 +1071,7 @@ def main():
     logger.info(f"可用的API类型: {', '.join(available_types)}")
 
     # 定时运行参数
-    SCHEDULE_INTERVAL = 300  # 5分钟 = 300秒
+    SCHEDULE_INTERVAL = 60  # 5分钟 = 300秒
     CSV_BASE_PATH = "data/scheduled_xuangu_data.csv"
 
     # 配置参数

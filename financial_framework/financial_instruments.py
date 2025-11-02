@@ -365,25 +365,19 @@ class FinancialInstrument(ABC, LoggerMixin):
     def collect_all_daily_data(self, delay_seconds=None):
         """获取所有产品的日K数据
 
+        在获取数据前会检查每个产品的最新数据日期，如果已是前一个交易日的数据则跳过
+
         Args:
             delay_seconds: 延迟秒数，如果为None则使用类的默认值
         """
         print(f"开始获取所有{self.get_instrument_type()}日K数据 - {datetime.now()}")
 
-        # 使用FilePathGenerator生成文件路径
-        date_str = datetime.now().strftime('%Y-%m-%d')
-        filepath = FilePathGenerator.generate_macd_signal_path(
-            instrument_type=self.get_instrument_type(),
-            period="30m",
-            date=date_str
-        )
+        # 根据当前instruments的type，从macd_data读取当天的数据并去重得到所有的instruments
+        instruments = self._get_instruments_from_macd_data()
 
-        # 从数据文件中读取所有股票代码和名称
-        instruments = self._get_instruments_from_data_file(filepath)
-
-        # 如果文件不存在或读取失败，则使用原来的方法
+        # 如果从macd_data没有获取到数据，则使用原来的方法
         if not instruments:
-            print(f"无法从数据文件{filepath}读取股票信息，使用默认方法获取产品列表")
+            print(f"无法从macd_data读取股票信息，使用默认方法获取产品列表")
             instruments = self.get_all_instruments()
 
         total_instruments = len(instruments)
@@ -397,88 +391,72 @@ class FinancialInstrument(ABC, LoggerMixin):
         print(f"预计总耗时{estimated_total_time/60:.1f}分钟，共{total_instruments}个{self.get_instrument_type()}")
 
         instruments = list(reversed(instruments))
+
+        # 统计变量
+        skipped_count = 0
+        updated_count = 0
+
         for i, instrument_info in enumerate(instruments, 1):
             name = instrument_info.get('name', instrument_info.get('板块名称', ''))
             code = instrument_info.get('code', instrument_info.get('板块代码', ''))
+
+            # 检查数据是否已是最新的
+            if self._is_daily_data_up_to_date(code):
+                print(f"跳过 {name}({code}) - 数据已是最新 ({i}/{total_instruments})")
+                skipped_count += 1
+                continue
+
             print(f"正在获取{name}({code})的日K数据... ({i}/{total_instruments})")
 
             daily_data = self.get_daily_data(instrument_info)
             if daily_data is not None and len(daily_data) > 0:
                 self.save_daily_data(instrument_info, daily_data)
+                updated_count += 1
 
             if i < total_instruments:
                 time.sleep(delay_seconds)
 
         print(f"所有{self.get_instrument_type()}日K数据获取完成 - {datetime.now()}")
+        print(f"统计: 总计 {total_instruments} 个产品, 跳过 {skipped_count} 个, 更新 {updated_count} 个")
+        if skipped_count > 0:
+            print(f"节省时间: 约 {skipped_count * delay_seconds / 60:.1f} 分钟")
 
-    def _get_instruments_from_data_file(self, filepath):
-        """从数据文件中获取所有股票代码和名称
-
-        Args:
-            filepath: 数据文件路径
+    def _get_instruments_from_macd_data(self):
+        """从macd_data表读取当天的数据并去重得到所有的instruments
 
         Returns:
             list: 产品信息列表，包含code和name
         """
         try:
-            # 根据文件路径确定对应的数据文件
+            # 获取当前产品类型
             instrument_type = self.get_instrument_type()
-            date_str = datetime.now().strftime('%Y-%m-%d')
 
-            # 生成对应的数据文件路径
-            if instrument_type == "stock":
-                data_filepath = FilePathGenerator.generate_macd_signal_path("stock", date_str)
-            elif instrument_type == "etf":
-                data_filepath = FilePathGenerator.generate_macd_signal_path("etf", date_str)
-            else:
-                print(f"不支持的产品类型: {instrument_type}")
+            # 获取今天的日期，格式化为 YYYY-MM-DD
+            # today = datetime.now().strftime('%Y-%m-%d')
+            today = (datetime.now() - timedelta(days=2)).strftime('%Y-%m-%d')
+            self.log_info(f"从macd_data表读取{instrument_type}类型的产品信息，日期: {today}")
+
+            # 从macd_data表查询今天的数据
+            # instrument_type字段对应不同的产品类型
+            macd_df = self.db.query_macd_data(
+                start_time=f"{today} 00:00:00",
+                end_time=f"{today} 23:59:59",
+                instrument_type=instrument_type
+            )
+
+            if macd_df.empty:
+                self.log_warning(f"macd_data表中没有找到{instrument_type}类型的数据")
                 return []
 
-            if not os.path.exists(data_filepath):
-                print(f"数据文件不存在: {data_filepath}")
-                return []
+            # 去重处理：根据code去重，保留最新的记录
+            unique_instruments = {}
 
-            # 读取CSV文件，指定SECURITY_CODE列为字符串以保留前导零
-            dtype_dict = {'SECURITY_CODE': str}
-            if instrument_type == "etf":
-                # 对于ETF，可能需要处理不同的列名
-                dtype_dict = {'code': str, 'SECURITY_CODE': str}
-
-            df = pd.read_csv(data_filepath, encoding='utf-8-sig', dtype=dtype_dict)
-
-            instruments = []
-
-            # 根据不同的产品类型，识别不同的列名
-            if instrument_type == "stock":
-                # 股票数据文件列名：SECURITY_CODE, SECURITY_SHORT_NAME
-                code_col = 'SECURITY_CODE'
-                name_col = 'SECURITY_SHORT_NAME'
-            elif instrument_type == "etf":
-                # ETF数据文件列名（可能需要根据实际情况调整）
-                code_col = 'SECURITY_CODE' if 'SECURITY_CODE' in df.columns else 'code'
-                name_col = 'SECURITY_SHORT_NAME' if 'SECURITY_SHORT_NAME' in df.columns else 'name'
-            else:
-                print(f"不支持的产品类型: {instrument_type}")
-                return []
-
-            # 检查列是否存在
-            if code_col not in df.columns or name_col not in df.columns:
-                print(f"数据文件中未找到必要的列: {code_col}, {name_col}")
-                return []
-
-            # 提取股票代码和名称
-            unique_instruments = {}  # 使用字典来去重，以code为键
-
-            for _, row in df.iterrows():
-                code = str(row[code_col]).strip()
-                name = str(row[name_col]).strip()
+            for _, row in macd_df.iterrows():
+                code = str(row['code']).strip()
+                name = str(row['name']).strip()
 
                 if code and name and code != 'nan' and name != 'nan':
-                    # 确保股票代码为6位数字，不足的前面补零（针对A股）
-                    if instrument_type == "stock" and code.isdigit():
-                        code = code.zfill(6)
-
-                    # 使用字典去重，相同code只保留最后一个
+                    # 使用字典去重，相同code只保留最新的记录
                     unique_instruments[code] = {
                         'code': code,
                         'name': name,
@@ -488,9 +466,67 @@ class FinancialInstrument(ABC, LoggerMixin):
             # 将字典转换为列表
             instruments = list(unique_instruments.values())
 
-            print(f"从数据文件{data_filepath}中读取到{len(df)}行数据，去重后得到{len(instruments)}个{instrument_type}产品")
+            self.log_info(f"从macd_data表读取到{len(macd_df)}行数据，去重后得到{len(instruments)}个{instrument_type}产品")
+
             return instruments
 
         except Exception as e:
-            self.log_error(f"从数据文件读取产品信息失败: {e}", exc_info=True)
+            self.log_error(f"从macd_data表读取产品信息失败: {e}", exc_info=True)
             return []
+
+    def _is_daily_data_up_to_date(self, code):
+        """
+        检查指定代码的日K数据是否为最新的（前一个交易日）
+
+        Args:
+            code: 产品代码
+
+        Returns:
+            bool: 如果是最新数据返回True，否则返回False
+        """
+        try:
+            # 查询该代码的最新日K数据
+            df_latest = self.db.query_kline_data('1d', code=code, limit=1)
+
+            if df_latest.empty:
+                self.log_debug(f"{code} 没有日K数据记录")
+                return False
+
+            # 获取最新数据的日期
+            latest_date_str = df_latest.iloc[0]['datetime']
+            latest_date = datetime.strptime(latest_date_str, '%Y-%m-%d').date()
+
+            # 获取前一个交易日的日期
+            previous_trading_day = self._get_previous_trading_day()
+
+            self.log_debug(f"{code} 最新数据日期: {latest_date}, 前一个交易日: {previous_trading_day}")
+
+            # 如果最新数据是前一个交易日或更晚，则认为是最新的
+            is_up_to_date = latest_date >= previous_trading_day
+
+            if is_up_to_date:
+                self.log_info(f"✓ {code} 日K数据已是最新 (最新: {latest_date})")
+            else:
+                self.log_info(f"→ {code} 日K数据需要更新 (最新: {latest_date}, 期望: {previous_trading_day})")
+
+            return is_up_to_date
+
+        except Exception as e:
+            self.log_error(f"检查{code}的数据日期失败: {e}", exc_info=True)
+            return False
+
+    def _get_previous_trading_day(self):
+        """
+        获取前一个交易日的日期
+
+        Returns:
+            date: 前一个交易日的日期对象
+        """
+        today = datetime.now().date()
+        previous_day = today - timedelta(days=1)
+
+        # 如果前天是周末，继续往前找
+        while previous_day.weekday() >= 5:  # 5=周六, 6=周日
+            previous_day -= timedelta(days=1)
+
+        return previous_day

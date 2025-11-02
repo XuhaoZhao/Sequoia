@@ -81,7 +81,7 @@ from db_manager import IndustryDataDB
 # fund_etf_spot_em_df = ak.fund_etf_spot_em()
 # print(fund_etf_spot_em_df)
 # uu = UnifiedDataCollector()
-# # uu.collect_realtime_1min_data(instrument_type='concept_sector')
+# uu.collect_all_daily_data(instrument_type='etf')
 # uu.start_monitoring()
 
 # temp_df = stock_large_cap_filter(debug=True)
@@ -99,8 +99,8 @@ from db_manager import IndustryDataDB
 # stock_value = stock.get_all_instruments()
 # print(stock_value)
 
-uu = UnifiedDataCollector()
-uu.collect_all_historical_min_data(instrument_type='etf',period = '30')
+# uu = UnifiedDataCollector()
+# uu.collect_all_historical_min_data(instrument_type='etf',period = '30')
 
 # fund_etf_hist_em_df = ak.fund_etf_hist_em(symbol="513500", period="daily", start_date="20000101", end_date="20230201", adjust="")
 # print(fund_etf_hist_em_df)
@@ -111,10 +111,11 @@ uu.collect_all_historical_min_data(instrument_type='etf',period = '30')
 # # 注意：该接口返回的数据只有最近一个交易日的有开盘价，其他日期开盘价为 0
 # stock_zh_a_hist_min_em_df = ak.stock_zh_a_hist_min_em(symbol="002463", start_date="2025-08-20 09:30:00", end_date="2026-03-20 15:00:00", period="30", adjust="")
 # print(stock_zh_a_hist_min_em_df)
-
+# db = IndustryDataDB("industry_data.db")
+# db.clear_all_macd_data()
 # ff = UnifiedAnalyzer()
 # ff.analyze_all_instruments('etf')
-# # ff.analyze_all_instruments('stock')
+# ff.analyze_all_instruments('stock')
 # instrument_info = {
 #       'code': '601919',
 #       'name': 'XD中远海'
@@ -156,4 +157,23 @@ symbol = "000001"
 
 # stock_zh_a_spot_em_df = ak.stock_zh_a_spot_em()
 # print(stock_zh_a_spot_em_df)
-# db = IndustryDataDB()
+# db = IndustryDataDB("industry_data.db")
+# ff = db.get_today_30m_data("002294")
+# print(ff)
+
+# data = {
+#     'name': '张三',
+#     'code':'601818'
+# }
+
+# ff = UnifiedAnalyzer()
+# tt = ff.analyze_macd(data,'etf')
+# print(tt)
+# db = IndustryDataDB("industry_data.db")
+# df_latest = db.query_kline_data('1d', code='159928', limit=1)
+# print(df_latest)
+
+
+
+uu = UnifiedDataCollector()
+uu.collect_all_daily_data(instrument_type = 'etf')
