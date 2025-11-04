@@ -145,10 +145,10 @@ symbol = "000001"
 
 # fund_etf_hist_min_em(symbol="515170", period="1", adjust="", start_date="2025-10-15 09:00:00", end_date="2026-03-20 17:40:00")
 
-# ff = UnifiedAnalyzer()
+ff = UnifiedAnalyzer()
+ff.analyze_all_instruments('stock')
 # ff.analyze_all_instruments('etf')
-# ff.analyze_all_instruments('etf')
-# signals = ff.analyze_macd_convergence_patterns('stock')
+# signals = ff.analyze_macd_convergence_patterns('etf')
 
 
 
@@ -175,5 +175,5 @@ symbol = "000001"
 
 
 
-uu = UnifiedDataCollector()
-uu.collect_all_daily_data(instrument_type = 'etf')
+# uu = UnifiedDataCollector()
+# uu.collect_all_daily_data(instrument_type = 'etf')

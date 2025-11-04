@@ -110,7 +110,7 @@ def generate_stock_data():
 
         # 调用拦截函数获取股票数据
         success = interceptor.intercept_and_save_to_csv(
-            xuangu_id="xc0d80aece1307005f65",
+            xuangu_id="xc0d89dd08430800eeee",
             color="w",
             action="edit_way",
             type="stock",                     # 股票数据类型
@@ -182,31 +182,31 @@ def scheduled_data_collection():
     time.sleep(5)
     logger.info("开始获取stock 30m数据")
     unifiedDataCollector.collect_all_historical_min_data(instrument_type='stock', period="30")
-    logger.info("结束获取stock 30m数据")
-    time.sleep(5)
-    unifiedAnalyzer = UnifiedAnalyzer()
-    logger.info("开始分析stock macd")
-    unifiedAnalyzer.analyze_all_instruments('stock')
-    logger.info("结束分析stock macd")
-    time.sleep(5)
-    logger.info("开始分析etf macd")
-    unifiedAnalyzer.analyze_all_instruments('etf')
-    logger.info("结束分析etf macd")
-    time.sleep(5)
-    logger.info("开始获取etf 1d数据")
-    unifiedDataCollector.collect_all_daily_data('etf')
-    logger.info("结束获取etf 1d数据")
-    time.sleep(5)
-    logger.info("开始获取stock 1d数据")
-    unifiedDataCollector.collect_all_daily_data('stock')
-    logger.info("结束获取stock 1d数据")
-    technicalAnalyzer = TechnicalAnalyzer()
-    logger.info("开始分析etf dayK")
-    technicalAnalyzer.analyze_instruments_from_macd_data('etf')
-    logger.info("结束分析etf dayK")
-    logger.info("开始分析stock dayK")
-    technicalAnalyzer.analyze_instruments_from_macd_data('stock')
-    logger.info("结束分析stock dayK")
+    # logger.info("结束获取stock 30m数据")
+    # time.sleep(5)
+    # unifiedAnalyzer = UnifiedAnalyzer()
+    # logger.info("开始分析stock macd")
+    # unifiedAnalyzer.analyze_all_instruments('stock')
+    # logger.info("结束分析stock macd")
+    # time.sleep(5)
+    # logger.info("开始分析etf macd")
+    # unifiedAnalyzer.analyze_all_instruments('etf')
+    # logger.info("结束分析etf macd")
+    # time.sleep(5)
+    # logger.info("开始获取etf 1d数据")
+    # unifiedDataCollector.collect_all_daily_data('etf')
+    # logger.info("结束获取etf 1d数据")
+    # time.sleep(5)
+    # logger.info("开始获取stock 1d数据")
+    # unifiedDataCollector.collect_all_daily_data('stock')
+    # logger.info("结束获取stock 1d数据")
+    # technicalAnalyzer = TechnicalAnalyzer()
+    # logger.info("开始分析etf dayK")
+    # technicalAnalyzer.analyze_instruments_from_macd_data('etf')
+    # logger.info("结束分析etf dayK")
+    # logger.info("开始分析stock dayK")
+    # technicalAnalyzer.analyze_instruments_from_macd_data('stock')
+    # logger.info("结束分析stock dayK")
 
 
 def setup_scheduled_jobs(test_mode=False):
@@ -227,7 +227,7 @@ def setup_scheduled_jobs(test_mode=False):
     # 添加定时任务：每天15:05执行数据收集
     scheduler.add_job(
         func=scheduled_data_collection,
-        trigger=CronTrigger(hour=0, minute=5),
+        trigger=CronTrigger(hour=16, minute=6),
         id='daily_data_collection',
         name='每日数据收集任务',
         replace_existing=True

@@ -164,12 +164,13 @@ class ScheduledDataCollector:
         current_minute = current_time.minute
         time_in_minutes = current_hour * 60 + current_minute
 
+        #延迟1分钟，不要9:30和13:00
         # 上午交易时间：9:30-11:30 (570-690分钟)
-        morning_start = 9 * 60 + 30  # 9:30 = 570分钟
+        morning_start = 9 * 60 + 31  # 9:30 = 570分钟
         morning_end = 11 * 60 + 30   # 11:30 = 690分钟
 
         # 下午交易时间：13:00-15:00 (780-900分钟)
-        afternoon_start = 13 * 60     # 13:00 = 780分钟
+        afternoon_start = 13 * 60+1     # 13:00 = 780分钟
         afternoon_end = 15 * 60       # 15:00 = 900分钟
 
         is_morning = morning_start <= time_in_minutes <= morning_end
@@ -184,10 +185,10 @@ class ScheduledDataCollector:
 
         self.logger.info(f"[{self.task_id}] ===== 调度任务执行 - {current_time_str} =====")
 
-        # # 检查是否在交易时间内
-        # if not self._is_trading_time(current_time):
-        #     self.logger.info(f"[{self.task_id}] 当前时间非交易时间，跳过数据收集")
-        #     return
+        # 检查是否在交易时间内
+        if not self._is_trading_time(current_time):
+            self.logger.info(f"[{self.task_id}] 当前时间非交易时间，跳过数据收集")
+            return
 
         # 执行单次数据收集（复用浏览器实例）
         success = self.run_single_collection()
@@ -330,8 +331,8 @@ class ScheduledDataCollectorManager:
             for task_id, collector in self.collectors.items():
                 # 简化的cron表达式: 周一到周五，每10分钟执行一次
                 # 任务内部会自行判断是否在交易时间内
-                # cron_expression = '*/1 * * * 1-5'  # 每10分钟执行，周一到周五
-                cron_expression = '* * * * *'
+                cron_expression = '*/10 * * * *'  # 每10分钟执行，周一到周五
+                # cron_expression = '* * * * *'  # 临时测试：每分钟执行，便于调试
 
                 self.scheduler.add_job(
                     collector.scheduled_job,
@@ -464,7 +465,7 @@ def create_default_config() -> Dict:
         "use_database": True,  # 使用数据库保存数据
 
         # 选股配置
-        "stock_xuangu_id": "xc0d80aece1307005f65",
+        "stock_xuangu_id": "xc0d89dd08430800eeee",
         "etf_xuangu_id": "xc0d38036a3d93000c67",  # ETF专用ID
         "color": "w",
         "action": "edit_way",
