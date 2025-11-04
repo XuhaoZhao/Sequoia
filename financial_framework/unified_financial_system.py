@@ -1187,9 +1187,61 @@ class TechnicalAnalyzer:
         return sorted(signals, key=lambda x: x["天数前"])
 
 
+    def calculate_first_derivative(self, series):
+        """
+        计算序列的一阶导数（斜率）
+
+        Args:
+            series: 价格或均线序列
+
+        Returns:
+            numpy.ndarray: 一阶导数数组
+        """
+        if len(series) < 2:
+            return np.array([])
+
+        # 使用numpy的梯度函数计算一阶导数
+        derivatives = np.gradient(series)
+        return derivatives
+
+    def detect_turning_points_by_derivative(self, series):
+        """
+        基于一阶导数检测转折点（仅判断正负）
+
+        Args:
+            series: 价格或均线序列
+
+        Returns:
+            dict: 转折点信息 {'bottoms': [], 'tops': [], 'changes': []}
+        """
+        if len(series) < 3:
+            return {'bottoms': [], 'tops': [], 'changes': []}
+
+        derivatives = self.calculate_first_derivative(series)
+        turning_points = {'bottoms': [], 'tops': [], 'changes': []}
+
+        # 检测导数符号变化（从负到正为底部，从正到负为顶部）
+        for i in range(1, len(derivatives)):
+            prev_derivative = derivatives[i-1]
+            curr_derivative = derivatives[i]
+
+            # 检测是否发生符号变化
+            if prev_derivative * curr_derivative < 0:  # 符号相反
+                # 从负变正：底部转折点
+                if prev_derivative < 0 and curr_derivative > 0:
+                    turning_points['bottoms'].append(i)
+                    turning_points['changes'].append(i)
+
+                # 从正变负：顶部转折点
+                elif prev_derivative > 0 and curr_derivative < 0:
+                    turning_points['tops'].append(i)
+                    turning_points['changes'].append(i)
+
+        return turning_points
+
     def detect_turning_points(self, prices, ma_data, current_price):
         """
-        检测潜在转折点
+        检测潜在转折点（基于一阶导数方法）
 
         Args:
             prices: 价格序列
@@ -1205,47 +1257,93 @@ class TechnicalAnalyzer:
         ma10 = ma_data.get('MA10', [])
         ma20 = ma_data.get('MA20', [])
 
-        if len(ma5) < 3 or len(ma10) < 3 or len(ma20) < 3:
+        if len(ma5) < 5 or len(ma10) < 5 or len(ma20) < 5:
             return {"转折信号": [], "综合判断": "数据不足"}
 
-        ma5_slope = (ma5[-1] - ma5[-3]) / 2
-        ma10_slope = (ma10[-1] - ma10[-3]) / 2
-        ma20_slope = (ma20[-1] - ma20[-3]) / 2
+        # 计算各均线的一阶导数
+        ma5_derivatives = self.calculate_first_derivative(ma5)
+        ma10_derivatives = self.calculate_first_derivative(ma10)
+        ma20_derivatives = self.calculate_first_derivative(ma20)
 
-        if ma5_slope > 0 and ma10_slope > 0 and current_price > ma5[-1]:
-            if ma20_slope <= 0:
-                signals.append("短期均线向上，可能形成底部")
-            else:
-                signals.append("多均线向上，上升趋势确认")
+        # 获取最近的导数值（最后一个点的导数）
+        recent_ma5_deriv = ma5_derivatives[-1]
+        recent_ma10_deriv = ma10_derivatives[-1]
+        recent_ma20_deriv = ma20_derivatives[-1]
 
-        if ma5_slope < 0 and ma10_slope < 0 and current_price < ma5[-1]:
-            if ma20_slope >= 0:
-                signals.append("短期均线向下，可能形成顶部")
-            else:
-                signals.append("多均线向下，下降趋势确认")
+        # 检测各均线的转折点
+        ma5_turning = self.detect_turning_points_by_derivative(ma5)
+        ma10_turning = self.detect_turning_points_by_derivative(ma10)
+        ma20_turning = self.detect_turning_points_by_derivative(ma20)
 
+        # 基于导数分析生成信号
+        # 1. 短期均线向上突破信号
+        if recent_ma5_deriv > 0 and recent_ma10_deriv > 0:
+            if current_price > ma5[-1]:
+                if recent_ma20_deriv <= 0:
+                    signals.append("短期均线导数为正，可能形成底部")
+                else:
+                    signals.append("多周期均线导数为正，上升趋势确认")
+
+        # 2. 短期均线向下转弱信号
+        if recent_ma5_deriv < 0 and recent_ma10_deriv < 0:
+            if current_price < ma5[-1]:
+                if recent_ma20_deriv >= 0:
+                    signals.append("短期均线导数为负，可能形成顶部")
+                else:
+                    signals.append("多周期均线导数为负，下降趋势确认")
+
+        # 3. 检测最近的转折点（最近5个点内）
+        recent_turning_signals = []
+
+        if ma5_turning['changes']:
+            last_ma5_turn = ma5_turning['changes'][-1]
+            if len(ma5) - last_ma5_turn <= 5:
+                if last_ma5_turn in ma5_turning['bottoms']:
+                    recent_turning_signals.append("MA5近期底部转折")
+                else:
+                    recent_turning_signals.append("MA5近期顶部转折")
+
+        if ma10_turning['changes']:
+            last_ma10_turn = ma10_turning['changes'][-1]
+            if len(ma10) - last_ma10_turn <= 5:
+                if last_ma10_turn in ma10_turning['bottoms']:
+                    recent_turning_signals.append("MA10近期底部转折")
+                else:
+                    recent_turning_signals.append("MA10近期顶部转折")
+
+        signals.extend(recent_turning_signals)
+
+        # 4. 价格波动性分析（保留原有逻辑）
         price_volatility = np.std(prices[-10:]) / np.mean(prices[-10:])
         if price_volatility > 0.05:
             signals.append("价格波动加剧，注意趋势转换")
 
-        ma_convergence = abs(ma5[-1] - ma20[-1]) / ma20[-1]
-        if ma_convergence < 0.02:
-            signals.append("均线收敛，关注突破方向")
+        # 5. 均线收敛分析（基于导数）
+        if abs(recent_ma5_deriv - recent_ma20_deriv) < 0.0001:
+            signals.append("均线变化速率接近，关注突破方向")
 
-        if len(signals) >= 2:
+        # 6. 综合判断
+        if len(signals) >= 3:
             trend_judgment = "关键转折点"
-        elif len(signals) == 1:
+        elif len(signals) >= 2:
             trend_judgment = "潜在转折"
+        elif len(signals) == 1:
+            trend_judgment = "趋势变化迹象"
         else:
             trend_judgment = "趋势延续"
 
         return {
             "转折信号": signals,
             "综合判断": trend_judgment,
-            "均线斜率": {
-                "MA5斜率": round(ma5_slope, 4),
-                "MA10斜率": round(ma10_slope, 4),
-                "MA20斜率": round(ma20_slope, 4)
+            "导数分析": {
+                "MA5导数": round(recent_ma5_deriv, 6),
+                "MA10导数": round(recent_ma10_deriv, 6),
+                "MA20导数": round(recent_ma20_deriv, 6)
+            },
+            "转折点检测": {
+                "MA5转折点": ma5_turning,
+                "MA10转折点": ma10_turning,
+                "MA20转折点": ma20_turning
             }
         }
 
