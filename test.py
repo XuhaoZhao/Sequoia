@@ -180,6 +180,14 @@ symbol = "000001"
 
 # uu = UnifiedDataCollector()
 # uu.collect_all_daily_data('etf')
-tt = TechnicalAnalyzer()
-tt.analyze_instruments_from_macd_data('etf')
-
+# tt = TechnicalAnalyzer()
+# tt.analyze_instruments_from_macd_data('etf')
+db = IndustryDataDB("industry_data.db")
+code_id_dict = db.get_etf_info()
+hist_data = fund_etf_hist_min_em(
+    symbol='511020',
+    period='30',
+    adjust='qfq',
+    start_date="20251015", end_date='20251105',
+    code_id_dict = code_id_dict)
+print(hist_data)
