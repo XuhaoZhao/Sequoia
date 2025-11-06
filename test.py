@@ -166,9 +166,8 @@ symbol = "000001"
 #     'code':'601818'
 # }
 
-# ff = UnifiedAnalyzer()
-# tt = ff.analyze_macd(data,'etf')
-# print(tt)
+
+
 # db = IndustryDataDB("industry_data.db")
 # df_latest = db.query_kline_data('1d', code='159928', limit=1)
 # print(df_latest)
@@ -177,9 +176,11 @@ symbol = "000001"
 
 
 # uu.collect_all_daily_data(instrument_type = 'etf')
-
+ff = UnifiedAnalyzer()
+ff.analyze_all_instruments('etf')
+ff.analyze_macd_convergence_patterns('etf')
 # uu = UnifiedDataCollector()
-# uu.collect_all_daily_data('etf')
-tt = TechnicalAnalyzer()
-tt.analyze_instruments_from_macd_data('etf')
+# uu.collect_all_daily_data('stock')
+# tt = TechnicalAnalyzer()
+# tt.analyze_instruments_from_macd_data('stock')
 
