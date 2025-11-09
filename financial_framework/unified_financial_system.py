@@ -1801,7 +1801,8 @@ class TechnicalAnalyzer:
 
         if date_str is None:
             # 默认使用前天的数据（与financial_instruments.py保持一致）
-            date_str = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d")
+            # date_str = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d")
+            date_str = (datetime.now()).strftime("%Y-%m-%d")
 
         print(f"从macd_data表读取数据，产品类型: {instrument_type}, 日期: {date_str}")
 
@@ -1810,7 +1811,7 @@ class TechnicalAnalyzer:
             macd_df = self.db.query_macd_data(
                 start_time=f"{date_str} 00:00:00",
                 end_time=f"{date_str} 23:59:59",
-                instrument_type=instrument_type.replace('_sector', '')  # 转换为数据库中的格式
+                instrument_type=instrument_type
             )
 
             if macd_df.empty:

@@ -432,8 +432,8 @@ class FinancialInstrument(ABC, LoggerMixin):
             instrument_type = self.get_instrument_type()
 
             # 获取今天的日期，格式化为 YYYY-MM-DD
-            # today = datetime.now().strftime('%Y-%m-%d')
-            today = (datetime.now() - timedelta(days=2)).strftime('%Y-%m-%d')
+            today = datetime.now().strftime('%Y-%m-%d')
+            # today = (datetime.now() - timedelta(days=2)).strftime('%Y-%m-%d')
             self.log_info(f"从macd_data表读取{instrument_type}类型的产品信息，日期: {today}")
 
             # 从macd_data表查询今天的数据
