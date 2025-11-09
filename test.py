@@ -23,6 +23,7 @@ from data_collect.stock_chip_race import stock_chip_race_open,stock_chip_race_en
 import adata as ad
 from rewrite_ak_share.rewrite_index_zh_em import index_zh_a_hist
 from rewrite_ak_share.rewrite_fund_etf_em import fund_etf_hist_min_em
+from rewrite_ak_share.rewrite_stock_hist_em import stock_zh_a_hist,stock_zh_a_hist_min_em
 from db_manager import IndustryDataDB
 # hh = ak.index_csindex_all()
 
@@ -144,9 +145,10 @@ symbol = "000001"
 # print(stock_zh_a_hist_df)
 
 # fund_etf_hist_min_em(symbol="515170", period="1", adjust="", start_date="2025-10-15 09:00:00", end_date="2026-03-20 17:40:00")
-
-# ff = UnifiedAnalyzer()
-# ff.analyze_all_instruments('stock')
+db = IndustryDataDB("industry_data.db")
+db.clear_all_macd_data()
+ff = UnifiedAnalyzer()
+ff.analyze_all_instruments('stock')
 # ff.analyze_all_instruments('etf')
 # signals = ff.analyze_macd_convergence_patterns('etf')
 
@@ -179,15 +181,11 @@ symbol = "000001"
 # uu.collect_all_daily_data(instrument_type = 'etf')
 
 # uu = UnifiedDataCollector()
-# uu.collect_all_daily_data('etf')
+# uu.collect_all_historical_min_data('stock',period = '30')
 # tt = TechnicalAnalyzer()
 # tt.analyze_instruments_from_macd_data('etf')
-db = IndustryDataDB("industry_data.db")
-code_id_dict = db.get_etf_info()
-hist_data = fund_etf_hist_min_em(
-    symbol='511020',
-    period='30',
-    adjust='qfq',
-    start_date="20251015", end_date='20251105',
-    code_id_dict = code_id_dict)
-print(hist_data)
+# db = IndustryDataDB("industry_data.db")
+
+
+# ff = stock_zh_a_hist_min_em(symbol="600161",period="60",start_date="20250901",end_date="20251108",adjust="qfq")
+# print(ff)

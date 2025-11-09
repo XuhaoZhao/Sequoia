@@ -249,11 +249,13 @@ class UnifiedAnalyzer:
             except Exception as e:
                 print(f"分析{instrument_info.get('name', '')}失败: {e}")
     
-    def analyze_all_instruments(self, instrument_type='industry_sector'):
-        """分析指定类型的所有产品，收集所有金叉信号后统一保存
+    def analyze_all_instruments(self, instrument_type='industry_sector', macd_params=None):
+        """分析指定类型的所有产品，使用30分钟和60分钟MACD组合分析
 
         Args:
             instrument_type: 产品类型 ('industry_sector', 'stock', 'etf', 'concept_sector', 'index')
+            macd_params: MACD参数字典，格式为{'fast': 12, 'slow': 26, 'signal': 9}，
+                        默认为{'fast': 5, 'slow': 13, 'signal': 5}
         """
         instruments_map = {
             'industry_sector': self.industry_sector,
@@ -268,7 +270,11 @@ class UnifiedAnalyzer:
             return
 
         instrument = instruments_map[instrument_type]
-        print(f"开始分析{instrument.get_instrument_type()}...")
+        print(f"开始分析{instrument.get_instrument_type()}的30分钟MACD并结合60分钟MACD过滤...")
+
+        # 筛选当天的金叉信号
+        # today = datetime.now().strftime('%Y-%m-%d')
+        today = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
 
         # 收集所有金叉信号数据
         all_golden_cross_data = []
@@ -276,11 +282,61 @@ class UnifiedAnalyzer:
         all_instruments = instrument.get_all_instruments()
         for instrument_info in all_instruments:
             try:
-                # 使用UnifiedAnalyzer的analyze_macd方法返回金叉信号数据列表
-                golden_cross_data = self.analyze_macd(instrument_info, instrument_type)
+                # 准备30分钟K线数据
+                kline_data_30m = self.prepare_kline_data(instrument_info, '30m')
 
-                if golden_cross_data:
-                    all_golden_cross_data.extend(golden_cross_data)
+                if kline_data_30m is not None:
+                    # 将30分钟数据转换为60分钟数据
+                    kline_data_60m = self.convert_30m_to_60m(kline_data_30m)
+
+                    if kline_data_60m is not None:
+                        # 计算30分钟MACD信号
+                        signals_30m = self.analyze_macd(instrument_info, kline_data_30m, macd_params)
+
+                        # 计算60分钟MACD
+                        macd_60m = self.calculate_60m_macd(kline_data_60m, macd_params)
+
+                        # 筛选当天的金叉信号，并检查对应的60分钟MACD柱状图是否为正（红柱子）
+                        if signals_30m and macd_60m is not None:
+                            for signal in signals_30m:
+                                if signal['type'] == '金叉':
+                                    timestamp = signal['time']
+                                    if timestamp is not None and timestamp.strftime('%Y-%m-%d') == today:
+                                        # 检查对应的60分钟MACD条件（红柱子 OR 绿柱子缩小）
+                                        is_red_histogram = self.is_60m_macd_positive_at_time(timestamp, macd_60m, kline_data_60m)
+                                        is_shrinking_green = self.is_60m_histogram_shrinking(timestamp, macd_60m, kline_data_60m)
+
+                                        if is_red_histogram:
+                                            print(f"\n{signal['name']} 当天30分钟MACD金叉信号(60分钟MACD为红柱子):")
+                                            message = f"{signal['name']} 30分钟MACD金叉信号\n时间: {signal['time']}\nMACD: {signal['macd']:.4f}\nSignal: {signal['signal']:.4f}\n【60分钟MACD为红柱子，确认信号】"
+                                            print(message)
+
+                                            # 格式化数据用于保存和通知
+                                            formatted_signal = {
+                                                'code': signal['code'],
+                                                'name': signal['name'],
+                                                'time': signal['time'].strftime('%Y-%m-%d %H:%M:%S'),
+                                                'macd': round(signal['macd'], 4),
+                                                'signal': round(signal['signal'], 4)
+                                            }
+                                            all_golden_cross_data.append(formatted_signal)
+                                        elif is_shrinking_green:
+                                            print(f"\n{signal['name']} 当天30分钟MACD金叉信号(60分钟绿柱子高度缩小):")
+                                            message = f"{signal['name']} 30分钟MACD金叉信号\n时间: {signal['time']}\nMACD: {signal['macd']:.4f}\nSignal: {signal['signal']:.4f}\n【60分钟绿柱子高度缩小，放宽条件通过】"
+                                            print(message)
+
+                                            # 格式化数据用于保存和通知
+                                            formatted_signal = {
+                                                'code': signal['code'],
+                                                'name': signal['name'],
+                                                'time': signal['time'].strftime('%Y-%m-%d %H:%M:%S'),
+                                                'macd': round(signal['macd'], 4),
+                                                'signal': round(signal['signal'], 4)
+                                            }
+                                            all_golden_cross_data.append(formatted_signal)
+                                        else:
+                                            print(f"\n{signal['name']} 当天30分钟MACD金叉信号(60分钟MACD为绿柱子且未缩小，过滤掉):")
+                                            print(f"时间: {signal['time']} MACD: {signal['macd']:.4f} Signal: {signal['signal']:.4f}")
             except Exception as e:
                 print(f"分析{instrument_info.get('name', '')}失败: {e}")
 
@@ -295,7 +351,7 @@ class UnifiedAnalyzer:
                 self.send_macd_notification(
                     name=signal_data['name'],
                     signal_data={
-                        'time': signal_data['time'],
+                        'time': datetime.strptime(signal_data['time'], '%Y-%m-%d %H:%M:%S'),
                         'macd': signal_data['macd'],
                         'signal': signal_data['signal']
                     },
@@ -304,13 +360,210 @@ class UnifiedAnalyzer:
                     signal_type="金叉"
                 )
 
-            print(f"共收集到 {len(all_golden_cross_data)} 个金叉信号，已保存到数据库并发送通知")
+            print(f"共收集到 {len(all_golden_cross_data)} 个有效金叉信号，已保存到数据库并发送通知")
         else:
-            print("未发现金叉信号")
+            print("未发现符合条件的金叉信号")
 
-        print(f"{instrument.get_instrument_type()}分析完成")
+        print(f"{instrument.get_instrument_type()}30分钟MACD分析完成")
 
-  
+    def convert_30m_to_60m(self, data_30m):
+        """将30分钟K线数据转换为60分钟K线数据
+
+        Args:
+            data_30m: 30分钟K线数据DataFrame，包含datetime, open_price, high_price, low_price, close_price, volume
+
+        Returns:
+            DataFrame: 60分钟K线数据，如果失败返回None
+        """
+        try:
+            if data_30m is None or data_30m.empty:
+                print("30分钟数据为空，无法转换为60分钟数据")
+                return None
+
+            # 复制数据避免修改原始数据
+            data = data_30m.copy()
+
+            # 确保datetime列是datetime类型
+            data['datetime'] = pd.to_datetime(data['datetime'])
+
+            # 设置datetime为索引以便重采样
+            data.set_index('datetime', inplace=True)
+
+            # 按60分钟进行重采样
+            resampled = data.resample('60min').agg({
+                'open_price': 'first',
+                'high_price': 'max',
+                'low_price': 'min',
+                'close_price': 'last',
+                'volume': 'sum'
+            }).dropna()
+
+            # 重置索引，将datetime变回列
+            resampled.reset_index(inplace=True)
+
+            print(f"成功将{len(data)}条30分钟数据转换为{len(resampled)}条60分钟数据")
+            return resampled
+
+        except Exception as e:
+            print(f"转换30分钟数据到60分钟数据失败: {e}")
+            return None
+
+    def calculate_60m_macd(self, kline_data_60m, macd_params=None):
+        """计算60分钟MACD指标
+
+        Args:
+            kline_data_60m: 60分钟K线数据DataFrame
+            macd_params: MACD参数字典
+
+        Returns:
+            tuple: (macd_line, signal_line, histogram, timestamps) 或 None
+                 histogram就是MACD柱状图（红绿柱子），DIF-DEA
+        """
+        try:
+            if macd_params is None:
+                macd_params = {'fast': 5, 'slow': 13, 'signal': 5}
+
+            if kline_data_60m is None or len(kline_data_60m) < macd_params['slow']:
+                print("60分钟数据不足，无法计算MACD")
+                return None
+
+            # 重命名列以匹配计算所需格式
+            analysis_data = kline_data_60m.rename(columns={
+                'datetime': '日期时间',
+                'close_price': '收盘'
+            })
+            analysis_data['日期时间'] = pd.to_datetime(analysis_data['日期时间'])
+
+            close_prices = analysis_data['收盘']
+            macd_line, signal_line, histogram = self.calculate_macd(close_prices,
+                                                                   fast=macd_params['fast'],
+                                                                   slow=macd_params['slow'],
+                                                                   signal=macd_params['signal'])
+
+            if macd_line is None:
+                return None
+
+            return macd_line, signal_line, histogram, analysis_data['日期时间']
+
+        except Exception as e:
+            print(f"计算60分钟MACD失败: {e}")
+            return None
+
+    def is_60m_macd_positive_at_time(self, timestamp_30m, macd_60m_data, kline_data_60m):
+        """判断指定时间点的60分钟MACD柱状图是否为正（红柱子）
+
+        Args:
+            timestamp_30m: 30分钟金叉信号的时间戳
+            macd_60m_data: 60分钟MACD数据 (macd_line, signal_line, histogram, timestamps)
+            kline_data_60m: 60分钟K线数据
+
+        Returns:
+            bool: 如果60分钟MACD柱状图为正（红柱子）返回True，否则返回False
+        """
+        try:
+            if macd_60m_data is None:
+                return False
+
+            macd_line, signal_line, histogram, timestamps = macd_60m_data
+
+            # 找到60分钟数据中与30分钟时间戳最接近的时间点
+            if timestamps is None or len(timestamps) == 0:
+                return False
+
+            # 将60分钟时间戳转换为datetime类型用于比较
+            timestamps_60m = pd.to_datetime(timestamps)
+
+            # 找到最接近且不超过30分钟时间戳的60分钟时间点
+            valid_times = timestamps_60m[timestamps_60m <= timestamp_30m]
+
+            if len(valid_times) == 0:
+                return False
+
+            # 获取最接近的时间点的索引
+            closest_time = valid_times.iloc[-1]
+            closest_idx = timestamps_60m[timestamps_60m == closest_time].index[0]
+
+            # 检查该时间点的MACD柱状图值（红绿柱子）
+            if closest_idx < len(histogram):
+                histogram_value = histogram.iloc[closest_idx]
+                # histogram > 0 表示红柱子（DIF在DEA上方）
+                return not pd.isna(histogram_value) and histogram_value > 0
+
+            return False
+
+        except Exception as e:
+            print(f"判断60分钟MACD柱状图是否为正失败: {e}")
+            return False
+
+    def is_60m_histogram_shrinking(self, timestamp_30m, macd_60m_data, kline_data_60m):
+        """判断60分钟MACD绿柱子高度是否在逐渐缩小（当前点及前2个点）
+
+        Args:
+            timestamp_30m: 30分钟金叉信号的时间戳
+            macd_60m_data: 60分钟MACD数据 (macd_line, signal_line, histogram, timestamps)
+            kline_data_60m: 60分钟K线数据
+
+        Returns:
+            bool: 如果绿柱子高度在逐渐缩小返回True，否则返回False
+        """
+        try:
+            if macd_60m_data is None:
+                return False
+
+            macd_line, signal_line, histogram, timestamps = macd_60m_data
+
+            # 找到60分钟数据中与30分钟时间戳最接近的时间点
+            if timestamps is None or len(timestamps) < 3:
+                return False
+
+            # 将60分钟时间戳转换为datetime类型用于比较
+            timestamps_60m = pd.to_datetime(timestamps)
+
+            # 找到最接近且不超过30分钟时间戳的60分钟时间点
+            valid_times = timestamps_60m[timestamps_60m <= timestamp_30m]
+
+            if len(valid_times) < 3:
+                return False
+
+            # 获取最近3个时间点的索引
+            recent_times = valid_times.iloc[-3:]
+            indices = []
+            for time in recent_times:
+                idx = timestamps_60m[timestamps_60m == time].index[0]
+                indices.append(idx)
+
+            # 检查这3个点的柱状图值
+            hist_values = []
+            for idx in indices:
+                if idx < len(histogram):
+                    hist_val = histogram.iloc[idx]
+                    if not pd.isna(hist_val):
+                        hist_values.append(hist_val)
+
+            if len(hist_values) < 3:
+                return False
+
+            # 检查是否都是负值（绿柱子）
+            if any(val >= 0 for val in hist_values):
+                return False
+
+            # 检查绿柱子高度是否在逐渐缩小（绝对值减小，即数值增大）
+            # 例如：-0.8, -0.5, -0.3 (高度在缩小)
+            hist_1, hist_2, hist_3 = hist_values[-3], hist_values[-2], hist_values[-1]
+
+            # 判断条件：前一个点 < 当前点 < 下一个点 (因为都是负数)
+            is_shrinking = (hist_1 < hist_2 < hist_3)
+
+            if is_shrinking:
+                print(f"绿柱子高度逐渐缩小: {hist_1:+.4f} -> {hist_2:+.4f} -> {hist_3:+.4f}")
+
+            return is_shrinking
+
+        except Exception as e:
+            print(f"判断60分钟绿柱子是否缩小失败: {e}")
+            return False
+
+
     def calculate_macd(self, close_prices, fast=12, slow=26, signal=9):
         """计算MACD指标"""
         if len(close_prices) < slow:
@@ -460,88 +713,109 @@ class UnifiedAnalyzer:
         except Exception as e:
             print(f"发送MACD通知失败: {e}")
 
-    def analyze_macd(self, instrument_info, instrument_type="unknown"):
-        """分析30分钟级别MACD，返回金叉信号数据
+    def analyze_macd(self, instrument_info, data, macd_params=None):
+        """分析MACD，返回所有信号数据
 
         Args:
             instrument_info: 产品信息字典
-            instrument_type: 产品类型(如: stock, etf等)，用于文件命名
+            data: 准备好的K线数据DataFrame，应包含'datetime'和'close_price'列
+            macd_params: MACD参数字典，格式为{'fast': 12, 'slow': 26, 'signal': 9}，默认为{'fast': 5, 'slow': 13, 'signal': 5}
 
         Returns:
-            list: 金叉信号数据列表，如果没有信号则返回空列表
+            list: 所有MACD信号数据列表（包括金叉和死叉），如果没有信号则返回空列表
         """
+        # 设置默认MACD参数
+        if macd_params is None:
+            macd_params = {'fast': 5, 'slow': 13, 'signal': 5}
+
         code = instrument_info.get('code')
         name = instrument_info.get('name')
 
-        # 从数据库获取30分钟数据
-        data_30m = self.db.query_kline_data('30m', code=code)
-        data_30m_toady = self.db.get_today_30m_data(code=code)
+        # 检查数据是否充足
+        min_required_length = macd_params['slow']
+        if data is None or len(data) < min_required_length:
+            print(f"{name}: 数据不足（需要至少{min_required_length}条数据，当前{len(data) if data is not None else 0}条），无法计算MACD")
+            return []
 
-        # 合并数据，处理时间重复问题（以历史数据为准）
-        combined_data = self.merge_30m_data_with_priority(data_30m, data_30m_toady, name)
-
-        if combined_data is None or len(combined_data) < 26:
-            print(f"{name}: 30分钟数据不足，无法计算MACD")
+        # 确保数据包含必要的列
+        if 'datetime' not in data.columns or 'close_price' not in data.columns:
+            print(f"{name}: 数据格式不正确，缺少必要的列")
             return []
 
         # 重命名列以匹配计算所需格式
-        combined_data = combined_data.rename(columns={
+        analysis_data = data.rename(columns={
             'datetime': '日期时间',
             'close_price': '收盘'
         })
-        combined_data['日期时间'] = pd.to_datetime(combined_data['日期时间'])
+        analysis_data['日期时间'] = pd.to_datetime(analysis_data['日期时间'])
 
-        close_prices = combined_data['收盘']
-        macd_line, signal_line, _ = self.calculate_macd(close_prices, 5, 13, 5)
+        close_prices = analysis_data['收盘']
+        macd_line, signal_line, _ = self.calculate_macd(close_prices,
+                                                       fast=macd_params['fast'],
+                                                       slow=macd_params['slow'],
+                                                       signal=macd_params['signal'])
 
         if macd_line is None:
             return []
 
-        signals = self.detect_macd_signals(macd_line, signal_line, combined_data['日期时间'])
+        signals = self.detect_macd_signals(macd_line, signal_line, analysis_data['日期时间'])
         if not signals:
             return []
 
-        # 筛选当天的金叉信号
-        today = datetime.now().strftime('%Y-%m-%d')
-        # today = (datetime.now() - timedelta(days=2)).strftime('%Y-%m-%d')
-        today_golden_cross_signals = []
-
+        # 准备返回的数据 - 包含所有类型的信号
+        all_signals = []
         for signal in signals:
-            timestamp = signal['timestamp']
-            if timestamp is not None and timestamp.strftime('%Y-%m-%d') == today and signal['type'] == '金叉':
-                today_golden_cross_signals.append({
-                    'time': timestamp,
-                    'type': signal['type'],
-                    'macd': signal['macd'],
-                    'signal': signal['signal']
-                })
+            all_signals.append({
+                'code': code,
+                'name': name,
+                'time': signal['timestamp'],
+                'type': signal['type'],
+                'macd': signal['macd'],
+                'signal': signal['signal']
+            })
 
-        if today_golden_cross_signals:
-            print(f"\n{name} 当天30分钟MACD金叉信号:")
-            # 准备返回的数据
-            csv_data = []
-            for signal in today_golden_cross_signals:
-                message = f"{name} 30分钟MACD{signal['type']}信号\n时间: {signal['time']}\nMACD: {signal['macd']:.4f}\nSignal: {signal['signal']:.4f}"
-                print(message)
+        return all_signals
 
-                # 添加到数据列表
-                csv_data.append({
-                    'code': code,
-                    'name': name,
-                    'time': signal['time'].strftime('%Y-%m-%d %H:%M:%S'),
-                    'macd': round(signal['macd'], 4),
-                    'signal': round(signal['signal'], 4)
-                })
+    def prepare_kline_data(self, instrument_info, period='30m'):
+        """准备K线数据用于MACD分析
 
-            return csv_data
+        Args:
+            instrument_info: 产品信息字典
+            period: 数据周期，如'1m', '5m', '30m', '1d'等
 
-        return []
+        Returns:
+            DataFrame: 准备好的K线数据，如果失败返回None
+        """
+        code = instrument_info.get('code')
+        name = instrument_info.get('name')
 
-    def detect_macd_bottom_convergence(self, instrument_info, instrument_type="unknown"):
+        try:
+            # 从数据库获取历史数据和今日数据
+            if period == '30m':
+                data_historical = self.db.query_kline_data('30m', code=code)
+                data_today = self.db.get_today_30m_data(code=code)
+                # 合并数据，处理时间重复问题（以历史数据为准）
+                combined_data = self.merge_30m_data_with_priority(data_historical, data_today, name)
+            else:
+                # 对于其他周期，直接从数据库获取数据
+                combined_data = self.db.query_kline_data(period, code=code)
+
+            if combined_data is None or combined_data.empty:
+                print(f"{name}: 无法获取{period}周期数据")
+                return None
+
+            return combined_data
+
+        except Exception as e:
+            print(f"{name}: 准备{period}周期数据时出错: {e}")
+            return None
+
+    def detect_macd_bottom_convergence(self, instrument_info, data_30m, instrument_type="unknown"):
         """检测MACD底部收敛模式：DIF在0轴下方且在DEA下方，但差距在缩小
 
         Args:
             instrument_info: 产品信息字典
+            data_30m: 30分钟K线数据DataFrame
             instrument_type: 产品类型(如: stock, etf等)，用于文件命名
 
         Returns:
@@ -550,24 +824,17 @@ class UnifiedAnalyzer:
         code = instrument_info.get('code')
         name = instrument_info.get('name')
 
-        # 从数据库获取30分钟数据
-        data_30m = self.db.query_kline_data('30m', code=code)
-        data_30m_toady = self.db.get_today_30m_data(code=code)
-        
-        # 合并数据，处理时间重复问题（以历史数据为准）
-        combined_data = self.merge_30m_data_with_priority(data_30m, data_30m_toady, name)
-
-        if combined_data is None or len(combined_data) < 30:
+        if data_30m is None or len(data_30m) < 30:
             return []
 
         # 重命名列以匹配计算所需格式
-        combined_data = combined_data.rename(columns={
+        analysis_data = data_30m.rename(columns={
             'datetime': '日期时间',
             'close_price': '收盘'
         })
-        combined_data['日期时间'] = pd.to_datetime(combined_data['日期时间'])
+        analysis_data['日期时间'] = pd.to_datetime(analysis_data['日期时间'])
 
-        close_prices = combined_data['收盘']
+        close_prices = analysis_data['收盘']
         print(close_prices)
         macd_line, signal_line, _ = self.calculate_macd(close_prices, 5, 13, 5)
         print(macd_line)
@@ -615,7 +882,7 @@ class UnifiedAnalyzer:
 
                 # 检查差值是否在逐渐缩小
                 if diff_current < diff_prev and diff_prev < diff_prev2:
-                    timestamp = combined_data.iloc[i]['日期时间']
+                    timestamp = analysis_data.iloc[i]['日期时间']
 
                     convergence_signals.append({
                         'code': code,
@@ -659,9 +926,49 @@ class UnifiedAnalyzer:
         all_instruments = instrument.get_all_instruments()
         for instrument_info in all_instruments:
             try:
-                convergence_data = self.detect_macd_bottom_convergence(instrument_info, instrument_type)
-                if convergence_data:
-                    all_convergence_data.extend(convergence_data)
+                # 准备30分钟K线数据
+                kline_data_30m = self.prepare_kline_data(instrument_info, '30m')
+
+                if kline_data_30m is not None:
+                    # 检测30分钟底部收敛模式
+                    convergence_data = self.detect_macd_bottom_convergence(instrument_info, kline_data_30m, instrument_type)
+
+                    if convergence_data:
+                        # 将30分钟数据转换为60分钟数据
+                        kline_data_60m = self.convert_30m_to_60m(kline_data_30m)
+
+                        if kline_data_60m is not None:
+                            # 计算60分钟MACD
+                            macd_60m = self.calculate_60m_macd(kline_data_60m)
+
+                            # 对每个底部收敛信号进行60分钟确认
+                            confirmed_convergence_data = []
+                            for signal in convergence_data:
+                                try:
+                                    # 解析信号时间
+                                    signal_time = datetime.strptime(signal['time'], '%Y-%m-%d %H:%M:%S')
+
+                                    # 检查对应的60分钟MACD条件（红柱子 OR 绿柱子缩小）
+                                    is_red_histogram = self.is_60m_macd_positive_at_time(signal_time, macd_60m, kline_data_60m)
+                                    is_shrinking_green = self.is_60m_histogram_shrinking(signal_time, macd_60m, kline_data_60m)
+
+                                    if is_red_histogram:
+                                        print(f"\n{signal['name']} 底部收敛信号(60分钟MACD为红柱子): 确认通过")
+                                        confirmed_convergence_data.append(signal)
+                                    elif is_shrinking_green:
+                                        print(f"\n{signal['name']} 底部收敛信号(60分钟绿柱子高度缩小): 确认通过")
+                                        confirmed_convergence_data.append(signal)
+                                    else:
+                                        print(f"\n{signal['name']} 底部收敛信号(60分钟MACD条件不满足): 过滤掉")
+                                        print(f"时间: {signal['time']} MACD: {signal['macd']:.4f} Signal: {signal['signal']:.4f}")
+
+                                except Exception as e:
+                                    print(f"确认{signal['name']}的底部收敛信号时出错: {e}")
+                                    # 如果确认过程出错，保留原信号（保守策略）
+                                    confirmed_convergence_data.append(signal)
+
+                            if confirmed_convergence_data:
+                                all_convergence_data.extend(confirmed_convergence_data)
             except Exception as e:
                 print(f"分析{instrument_info.get('name', '')}的底部收敛模式失败: {e}")
 

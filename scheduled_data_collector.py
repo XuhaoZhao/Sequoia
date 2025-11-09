@@ -110,7 +110,7 @@ def generate_stock_data():
 
         # 调用拦截函数获取股票数据
         success = interceptor.intercept_and_save_to_csv(
-            xuangu_id="xc0d89dd08430800eeee",
+            xuangu_id="xc0d9751bb4907005c57",
             color="w",
             action="edit_way",
             type="stock",                     # 股票数据类型

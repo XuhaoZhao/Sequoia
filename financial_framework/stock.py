@@ -7,13 +7,14 @@ from data_collect.stock_chip_race import stock_large_cap_filter
 from financial_framework.file_path_generator import (
     generate_stock_data_path
 )
+from rewrite_ak_share.rewrite_stock_hist_em import stock_zh_a_hist,stock_zh_a_hist_min_em
 
 
 class Stock(FinancialInstrument):
     """股票类"""
 
     # 获取5分钟历史数据的延迟时间（秒），防止被封禁IP
-    delay_seconds = 80
+    delay_seconds = 20
 
     def get_instrument_type(self):
         return "stock"
@@ -72,7 +73,7 @@ class Stock(FinancialInstrument):
             self.log_debug(f"查询时间范围: {start_date_str} 至 {end_date_str}")
 
             # 使用股票代码获取分钟级历史数据
-            hist_data = ak.stock_zh_a_hist_min_em(
+            hist_data = stock_zh_a_hist_min_em(
                 symbol=stock_info['code'],
                 start_date=start_date_str,
                 end_date=end_date_str,
@@ -143,13 +144,13 @@ class Stock(FinancialInstrument):
 
             if start_date is None:
                 # 250个交易日大约是350个自然日（考虑周末和节假日）
-                days_ago = datetime.now() - timedelta(days=350)
+                days_ago = datetime.now() - timedelta(days=750)
                 start_date = days_ago.strftime("%Y%m%d")
 
             self.log_info(f"获取股票{stock_info['code']}的日K数据，时间范围: {start_date} 至 {end_date}")
 
             # 获取股票日K线数据
-            daily_data = ak.stock_zh_a_hist(symbol=stock_info['code'], period="daily", start_date=start_date, end_date=end_date, adjust='qfq')
+            daily_data = stock_zh_a_hist(symbol=stock_info['code'], period="daily", start_date=start_date, end_date=end_date, adjust='qfq')
             if daily_data.empty:
                 return []
 
