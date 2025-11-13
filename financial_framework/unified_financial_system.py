@@ -1846,6 +1846,19 @@ class TechnicalAnalyzer:
                         analysis_result["MACD信号日期"] = date_str
                         analysis_result["产品类型"] = instrument_type
                         all_analysis_results.append(analysis_result)
+
+                        # 存储分析结果到数据库
+                        try:
+                            # 将product_type转换为适合的格式存储到数据库
+                            db_instrument_type = instrument_type
+                            success = self.db.insert_daily_k_analysis(analysis_result, db_instrument_type)
+                            if success:
+                                print(f"✓ {code} 分析结果已存储到数据库")
+                            else:
+                                print(f"⚠️ {code} 分析结果存储失败")
+                        except Exception as e:
+                            print(f"⚠️ {code} 分析结果存储异常: {str(e)}")
+
                         successful_analyses += 1
                         print(f"✓ {code} 分析完成")
                     else:

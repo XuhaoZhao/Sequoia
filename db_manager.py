@@ -103,6 +103,83 @@ class IndustryDataDB:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_macd_signal_type ON macd_data(signal_type)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_macd_notification_sent ON macd_data(notification_sent)")
 
+            # 创建股票日K结果分析数据表（精细版本）
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS daily_k_analysis (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    code TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    analysis_date TEXT NOT NULL,
+                    latest_price REAL NOT NULL,
+
+                    -- 均线数据
+                    ma5 REAL,
+                    ma10 REAL,
+                    ma20 REAL,
+                    ma60 REAL,
+                    ma5_slope REAL,
+                    ma10_slope REAL,
+                    ma20_slope REAL,
+                    ma_arrangement TEXT,
+                    ma_signal_strength INTEGER,
+                    ma_price_position TEXT,
+
+                    -- 布林带数据
+                    bb_upper REAL,
+                    bb_middle REAL,
+                    bb_lower REAL,
+                    bb_position REAL,
+                    bb_is_oversold BOOLEAN,
+                    distance_to_lower REAL,
+
+                    -- 成交量数据
+                    volume_ma5 REAL,
+                    volume_percentile REAL,
+                    volume_status TEXT,
+                    volume_grade INTEGER,
+                    volume_trend TEXT,
+                    volume_change_rate REAL,
+                    volume_z_score REAL,
+
+                    -- ZigZag数据
+                    zigzag_key_points INTEGER,
+                    zigzag_recent_highs TEXT,
+                    zigzag_recent_lows TEXT,
+
+                    -- 分形数据
+                    fractal_highs TEXT,
+                    fractal_lows TEXT,
+
+                    -- 斐波那契数据
+                    fib_swing_high REAL,
+                    fib_swing_low REAL,
+                    fib_retracement_levels TEXT,
+                    fib_current_levels TEXT,
+
+                    -- 综合分析
+                    comprehensive_rating TEXT,
+                    investment_advice TEXT,
+                    signal_count INTEGER,
+                    crossover_signals TEXT,
+                    turning_signals TEXT,
+
+                    -- 元数据
+                    instrument_type TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(code, analysis_date, instrument_type)
+                )
+            """)
+
+            # 创建日K分析数据表的索引
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_daily_k_analysis_code ON daily_k_analysis(code)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_daily_k_analysis_date ON daily_k_analysis(analysis_date)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_daily_k_analysis_code_date ON daily_k_analysis(code, analysis_date)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_daily_k_analysis_instrument_type ON daily_k_analysis(instrument_type)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_daily_k_analysis_rating ON daily_k_analysis(comprehensive_rating)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_daily_k_analysis_ma_arrangement ON daily_k_analysis(ma_arrangement)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_daily_k_analysis_volume_status ON daily_k_analysis(volume_status)")
+
             conn.commit()
     
     def _get_table_name(self, period: str, year_month: str) -> str:
@@ -833,4 +910,283 @@ class IndustryDataDB:
             except sqlite3.Error as e:
                 print(f"清空所有MACD数据失败: {e}")
                 return 0
+
+    def insert_daily_k_analysis(self, analysis_data: Dict, instrument_type: str = None) -> bool:
+        """
+        插入日K分析结果数据
+
+        Args:
+            analysis_data: 分析结果字典，包含所有技术指标数据
+            instrument_type: 产品类型
+
+        Returns:
+            是否插入成功
+        """
+        try:
+            import json
+
+            # 从分析结果中提取关键数据
+            basic_info = analysis_data.get("板块名称", "")
+            analysis_date = analysis_data.get("最新日期", "")
+            latest_price = analysis_data.get("最新收盘价", 0)
+
+            # 提取均线分析数据
+            ma_analysis = analysis_data.get("均线分析", {})
+            ma_data = ma_analysis.get("均线数值", {})
+
+            # 提取转折点分析中的导数（斜率）数据
+            turning_points = analysis_data.get("转折点分析", {})
+            derivative_analysis = turning_points.get("导数分析", {})
+
+            # 提取布林带数据
+            bb_analysis = analysis_data.get("布林带分析", {})
+
+            # 提取成交量数据
+            volume_analysis = analysis_data.get("成交量分析", {})
+
+            # 提取ZigZag数据
+            zigzag_analysis = analysis_data.get("ZigZag分析", {})
+
+            # 提取分形数据
+            fractal_analysis = analysis_data.get("分形分析", {})
+
+            # 提取斐波那契数据
+            fib_analysis = analysis_data.get("斐波那契分析", {})
+
+            # 提取综合分析数据
+            signals = analysis_data.get("综合分析信号", [])
+
+            with self.get_connection() as conn:
+                conn.execute("""
+                    INSERT OR REPLACE INTO daily_k_analysis
+                    (code, name, analysis_date, latest_price,
+                     ma5, ma10, ma20, ma60, ma5_slope, ma10_slope, ma20_slope,
+                     ma_arrangement, ma_signal_strength, ma_price_position,
+                     bb_upper, bb_middle, bb_lower, bb_position, bb_is_oversold, distance_to_lower,
+                     volume_ma5, volume_percentile, volume_status, volume_grade, volume_trend,
+                     volume_change_rate, volume_z_score,
+                     zigzag_key_points, zigzag_recent_highs, zigzag_recent_lows,
+                     fractal_highs, fractal_lows,
+                     fib_swing_high, fib_swing_low, fib_retracement_levels, fib_current_levels,
+                     comprehensive_rating, investment_advice, signal_count, crossover_signals, turning_signals,
+                     instrument_type)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    basic_info,  # code
+                    basic_info,  # name (暂时使用相同的值)
+                    analysis_date,
+                    latest_price,
+
+                    # 均线数据
+                    ma_data.get("MA5"),
+                    ma_data.get("MA10"),
+                    ma_data.get("MA20"),
+                    ma_data.get("MA60"),
+                    derivative_analysis.get("MA5"),
+                    derivative_analysis.get("MA10"),
+                    derivative_analysis.get("MA20"),
+                    ma_analysis.get("排列状态"),
+                    ma_analysis.get("信号强度"),
+                    ma_analysis.get("价格位置"),
+
+                    # 布林带数据
+                    bb_analysis.get("上轨"),
+                    bb_analysis.get("中轨"),
+                    bb_analysis.get("下轨"),
+                    bb_analysis.get("布林带位置"),
+                    bb_analysis.get("是否超跌"),
+                    bb_analysis.get("距离下轨百分比"),
+
+                    # 成交量数据
+                    volume_analysis.get("当前5日成交量均线"),
+                    volume_analysis.get("成交量百分位"),
+                    volume_analysis.get("成交量状态"),
+                    volume_analysis.get("成交量等级"),
+                    volume_analysis.get("成交量趋势"),
+                    volume_analysis.get("成交量变化率"),
+                    volume_analysis.get("Z分数"),
+
+                    # ZigZag数据
+                    zigzag_analysis.get("关键点数量"),
+                    json.dumps(zigzag_analysis.get("最近高点", []), ensure_ascii=False),
+                    json.dumps(zigzag_analysis.get("最近低点", []), ensure_ascii=False),
+
+                    # 分形数据
+                    json.dumps(fractal_analysis.get("分形高点", []), ensure_ascii=False),
+                    json.dumps(fractal_analysis.get("分形低点", []), ensure_ascii=False),
+
+                    # 斐波那契数据
+                    fib_analysis.get("摆动高点"),
+                    fib_analysis.get("摆动低点"),
+                    json.dumps(fib_analysis.get("斐波那契回撤位", {}), ensure_ascii=False),
+                    json.dumps(fib_analysis.get("当前位置接近的回撤位", []), ensure_ascii=False),
+
+                    # 综合分析
+                    analysis_data.get("综合评级"),
+                    analysis_data.get("投资建议"),
+                    len(signals),
+                    json.dumps(analysis_data.get("均线交叉信号", []), ensure_ascii=False),
+                    json.dumps(turning_points.get("转折信号", []), ensure_ascii=False),
+
+                    instrument_type
+                ))
+
+                conn.commit()
+                return True
+
+        except Exception as e:
+            print(f"插入日K分析数据失败: {e}")
+            return False
+
+    def query_daily_k_analysis(self, code: str = None, start_date: str = None,
+                              end_date: str = None, instrument_type: str = None,
+                              rating: str = None, limit: int = None) -> pd.DataFrame:
+        """
+        查询日K分析结果数据
+
+        Args:
+            code: 产品代码，为None时查询所有
+            start_date: 开始日期 (格式: YYYY-MM-DD)
+            end_date: 结束日期 (格式: YYYY-MM-DD)
+            instrument_type: 产品类型
+            rating: 综合评级 (强烈超跌、可能超跌、观望、正常)
+            limit: 限制返回记录数
+
+        Returns:
+            包含分析结果的DataFrame
+        """
+        with self.get_connection() as conn:
+            sql = "SELECT * FROM daily_k_analysis WHERE 1=1"
+            params = []
+
+            if code:
+                sql += " AND code = ?"
+                params.append(code)
+
+            if start_date:
+                sql += " AND analysis_date >= ?"
+                params.append(start_date)
+
+            if end_date:
+                sql += " AND analysis_date <= ?"
+                params.append(end_date)
+
+            if instrument_type:
+                sql += " AND instrument_type = ?"
+                params.append(instrument_type)
+
+            if rating:
+                sql += " AND comprehensive_rating = ?"
+                params.append(rating)
+
+            sql += " ORDER BY analysis_date DESC, code"
+
+            if limit:
+                sql += f" LIMIT {limit}"
+
+            try:
+                df = pd.read_sql_query(sql, conn, params=params)
+                return df
+            except sqlite3.Error as e:
+                print(f"查询日K分析数据失败: {e}")
+                return pd.DataFrame()
+
+    def get_latest_analysis_by_code(self, code: str, instrument_type: str = None) -> Dict:
+        """
+        根据代码获取最新的分析结果
+
+        Args:
+            code: 产品代码
+            instrument_type: 产品类型
+
+        Returns:
+            最新分析结果字典
+        """
+        with self.get_connection() as conn:
+            sql = """
+                SELECT * FROM daily_k_analysis
+                WHERE code = ?
+            """
+            params = [code]
+
+            if instrument_type:
+                sql += " AND instrument_type = ?"
+                params.append(instrument_type)
+
+            sql += " ORDER BY analysis_date DESC LIMIT 1"
+
+            try:
+                cursor = conn.execute(sql, params)
+                row = cursor.fetchone()
+
+                if row:
+                    # 转换为字典格式
+                    columns = [description[0] for description in cursor.description]
+                    return dict(zip(columns, row))
+                else:
+                    return {}
+
+            except sqlite3.Error as e:
+                print(f"获取最新分析结果失败: {e}")
+                return {}
+
+    def get_analysis_statistics(self, analysis_date: str = None,
+                               instrument_type: str = None) -> Dict:
+        """
+        获取分析结果统计信息
+
+        Args:
+            analysis_date: 分析日期，为None时使用最新日期
+            instrument_type: 产品类型
+
+        Returns:
+            统计信息字典
+        """
+        with self.get_connection() as conn:
+            try:
+                if analysis_date is None:
+                    # 获取最新分析日期
+                    cursor = conn.execute("SELECT MAX(analysis_date) FROM daily_k_analysis")
+                    latest_date = cursor.fetchone()[0]
+                    if not latest_date:
+                        return {"error": "没有找到分析数据"}
+                    analysis_date = latest_date
+
+                sql = """
+                    SELECT
+                        COUNT(*) as total_count,
+                        COUNT(CASE WHEN comprehensive_rating = '强烈超跌' THEN 1 END) as strong_oversold,
+                        COUNT(CASE WHEN comprehensive_rating = '可能超跌' THEN 1 END) as possible_oversold,
+                        COUNT(CASE WHEN comprehensive_rating = '观望' THEN 1 END) as观望,
+                        COUNT(CASE WHEN comprehensive_rating = '正常' THEN 1 END) as normal,
+                        AVG(ma5_slope) as avg_ma5_slope,
+                        AVG(volume_change_rate) as avg_volume_change,
+                        AVG(bb_position) as avg_bb_position
+                    FROM daily_k_analysis
+                    WHERE analysis_date = ?
+                """
+                params = [analysis_date]
+
+                if instrument_type:
+                    sql += " AND instrument_type = ?"
+                    params.append(instrument_type)
+
+                cursor = conn.execute(sql, params)
+                stats = cursor.fetchone()
+
+                return {
+                    "analysis_date": analysis_date,
+                    "instrument_type": instrument_type,
+                    "total_count": stats[0],
+                    "strong_oversold": stats[1],
+                    "possible_oversold": stats[2],
+                    "观望": stats[3],
+                    "normal": stats[4],
+                    "avg_ma5_slope": round(stats[5], 4) if stats[5] else 0,
+                    "avg_volume_change": round(stats[6], 2) if stats[6] else 0,
+                    "avg_bb_position": round(stats[7], 2) if stats[7] else 0
+                }
+
+            except sqlite3.Error as e:
+                return {"error": f"获取统计信息失败: {e}"}
 
