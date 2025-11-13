@@ -14,7 +14,7 @@ class Stock(FinancialInstrument):
     """股票类"""
 
     # 获取5分钟历史数据的延迟时间（秒），防止被封禁IP
-    delay_seconds = 20
+    delay_seconds = 40
 
     def get_instrument_type(self):
         return "stock"

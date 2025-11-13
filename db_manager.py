@@ -925,10 +925,10 @@ class IndustryDataDB:
         try:
             import json
 
-            # 从分析结果中提取关键数据
-            basic_info = analysis_data.get("板块名称", "")
-            analysis_date = analysis_data.get("最新日期", "")
-            latest_price = analysis_data.get("最新收盘价", 0)
+            # 从分析结果中提取关键数据，并确保数据类型正确
+            basic_info = str(analysis_data.get("板块名称", ""))
+            analysis_date = str(analysis_data.get("最新日期", ""))
+            latest_price = float(analysis_data.get("最新收盘价", 0))
 
             # 提取均线分析数据
             ma_analysis = analysis_data.get("均线分析", {})
@@ -956,6 +956,31 @@ class IndustryDataDB:
             # 提取综合分析数据
             signals = analysis_data.get("综合分析信号", [])
 
+            # 辅助函数：安全地转换数据类型
+            def safe_str(value):
+                """安全转换为字符串"""
+                if value is None:
+                    return ""
+                return str(value)
+
+            def safe_float(value):
+                """安全转换为浮点数"""
+                if value is None:
+                    return None
+                try:
+                    return float(value)
+                except (ValueError, TypeError):
+                    return None
+
+            def safe_int(value):
+                """安全转换为整数"""
+                if value is None:
+                    return None
+                try:
+                    return int(value)
+                except (ValueError, TypeError):
+                    return None
+
             with self.get_connection() as conn:
                 conn.execute("""
                     INSERT OR REPLACE INTO daily_k_analysis
@@ -970,44 +995,44 @@ class IndustryDataDB:
                      fib_swing_high, fib_swing_low, fib_retracement_levels, fib_current_levels,
                      comprehensive_rating, investment_advice, signal_count, crossover_signals, turning_signals,
                      instrument_type)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     basic_info,  # code
                     basic_info,  # name (暂时使用相同的值)
                     analysis_date,
                     latest_price,
 
-                    # 均线数据
-                    ma_data.get("MA5"),
-                    ma_data.get("MA10"),
-                    ma_data.get("MA20"),
-                    ma_data.get("MA60"),
-                    derivative_analysis.get("MA5"),
-                    derivative_analysis.get("MA10"),
-                    derivative_analysis.get("MA20"),
-                    ma_analysis.get("排列状态"),
-                    ma_analysis.get("信号强度"),
-                    ma_analysis.get("价格位置"),
+                    # 均线数据 - 转换为安全的类型
+                    safe_float(ma_data.get("MA5")),
+                    safe_float(ma_data.get("MA10")),
+                    safe_float(ma_data.get("MA20")),
+                    safe_float(ma_data.get("MA60")),
+                    safe_float(derivative_analysis.get("MA5")),
+                    safe_float(derivative_analysis.get("MA10")),
+                    safe_float(derivative_analysis.get("MA20")),
+                    safe_str(ma_analysis.get("排列状态")),
+                    safe_int(ma_analysis.get("信号强度")),
+                    safe_str(ma_analysis.get("价格位置")),
 
                     # 布林带数据
-                    bb_analysis.get("上轨"),
-                    bb_analysis.get("中轨"),
-                    bb_analysis.get("下轨"),
-                    bb_analysis.get("布林带位置"),
-                    bb_analysis.get("是否超跌"),
-                    bb_analysis.get("距离下轨百分比"),
+                    safe_float(bb_analysis.get("上轨")),
+                    safe_float(bb_analysis.get("中轨")),
+                    safe_float(bb_analysis.get("下轨")),
+                    safe_float(bb_analysis.get("布林带位置")),
+                    1 if bb_analysis.get("是否超跌") else 0,  # 转换布尔值为整数
+                    safe_float(bb_analysis.get("距离下轨百分比")),
 
                     # 成交量数据
-                    volume_analysis.get("当前5日成交量均线"),
-                    volume_analysis.get("成交量百分位"),
-                    volume_analysis.get("成交量状态"),
-                    volume_analysis.get("成交量等级"),
-                    volume_analysis.get("成交量趋势"),
-                    volume_analysis.get("成交量变化率"),
-                    volume_analysis.get("Z分数"),
+                    safe_float(volume_analysis.get("当前5日成交量均线")),
+                    safe_float(volume_analysis.get("成交量百分位")),
+                    safe_str(volume_analysis.get("成交量状态")),
+                    safe_int(volume_analysis.get("成交量等级")),
+                    safe_str(volume_analysis.get("成交量趋势")),
+                    safe_float(volume_analysis.get("成交量变化率")),
+                    safe_float(volume_analysis.get("Z分数")),
 
                     # ZigZag数据
-                    zigzag_analysis.get("关键点数量"),
+                    safe_int(zigzag_analysis.get("关键点数量")),
                     json.dumps(zigzag_analysis.get("最近高点", []), ensure_ascii=False),
                     json.dumps(zigzag_analysis.get("最近低点", []), ensure_ascii=False),
 
@@ -1016,19 +1041,19 @@ class IndustryDataDB:
                     json.dumps(fractal_analysis.get("分形低点", []), ensure_ascii=False),
 
                     # 斐波那契数据
-                    fib_analysis.get("摆动高点"),
-                    fib_analysis.get("摆动低点"),
+                    safe_float(fib_analysis.get("摆动高点")),
+                    safe_float(fib_analysis.get("摆动低点")),
                     json.dumps(fib_analysis.get("斐波那契回撤位", {}), ensure_ascii=False),
                     json.dumps(fib_analysis.get("当前位置接近的回撤位", []), ensure_ascii=False),
 
                     # 综合分析
-                    analysis_data.get("综合评级"),
-                    analysis_data.get("投资建议"),
+                    safe_str(analysis_data.get("综合评级")),
+                    safe_str(analysis_data.get("投资建议")),
                     len(signals),
                     json.dumps(analysis_data.get("均线交叉信号", []), ensure_ascii=False),
                     json.dumps(turning_points.get("转折信号", []), ensure_ascii=False),
 
-                    instrument_type
+                    safe_str(instrument_type) if instrument_type else None
                 ))
 
                 conn.commit()
