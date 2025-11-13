@@ -110,7 +110,7 @@ def generate_stock_data():
 
         # 调用拦截函数获取股票数据
         success = interceptor.intercept_and_save_to_csv(
-            xuangu_id="xc0d9751bb4907005c57",
+            xuangu_id="xc0d647de27193013bb2",
             color="w",
             action="edit_way",
             type="stock",                     # 股票数据类型
@@ -227,7 +227,7 @@ def setup_scheduled_jobs(test_mode=False):
     # 添加定时任务：每天15:05执行数据收集
     scheduler.add_job(
         func=scheduled_data_collection,
-        trigger=CronTrigger(hour=15, minute=54),
+        trigger=CronTrigger(hour=18, minute=17),
         id='daily_data_collection',
         name='每日数据收集任务',
         replace_existing=True

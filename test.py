@@ -145,10 +145,10 @@ symbol = "000001"
 # print(stock_zh_a_hist_df)
 
 # fund_etf_hist_min_em(symbol="515170", period="1", adjust="", start_date="2025-10-15 09:00:00", end_date="2026-03-20 17:40:00")
-db = IndustryDataDB("industry_data.db")
-db.clear_all_macd_data()
+# db = IndustryDataDB("industry_data.db")
+# db.clear_all_macd_data()
 ff = UnifiedAnalyzer()
-ff.analyze_all_instruments('stock')
+ff.analyze_all_instruments('etf')
 # ff.analyze_all_instruments('etf')
 # signals = ff.analyze_macd_convergence_patterns('etf')
 
@@ -169,7 +169,7 @@ ff.analyze_all_instruments('stock')
 # }
 
 # ff = UnifiedAnalyzer()
-# tt = ff.analyze_macd(data,'etf')
+# tt = ff.analyze_all_instruments(instrument_type="stock")
 # print(tt)
 # db = IndustryDataDB("industry_data.db")
 # df_latest = db.query_kline_data('1d', code='159928', limit=1)

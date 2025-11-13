@@ -273,8 +273,8 @@ class UnifiedAnalyzer:
         print(f"开始分析{instrument.get_instrument_type()}的30分钟MACD并结合60分钟MACD过滤...")
 
         # 筛选当天的金叉信号
-        # today = datetime.now().strftime('%Y-%m-%d')
-        today = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+        today = datetime.now().strftime('%Y-%m-%d')
+        # today = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
 
         # 收集所有金叉信号数据
         all_golden_cross_data = []
