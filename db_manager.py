@@ -107,66 +107,66 @@ class IndustryDataDB:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS daily_k_analysis (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    code TEXT NOT NULL,
-                    name TEXT NOT NULL,
-                    analysis_date TEXT NOT NULL,
-                    latest_price REAL NOT NULL,
+                    code TEXT NOT NULL,                          -- 股票/ETF/板块代码
+                    name TEXT NOT NULL,                          -- 股票/ETF/板块名称
+                    analysis_date TEXT NOT NULL,                 -- 分析日期 (格式: YYYY-MM-DD)
+                    latest_price REAL NOT NULL,                  -- 最新收盘价
 
                     -- 均线数据
-                    ma5 REAL,
-                    ma10 REAL,
-                    ma20 REAL,
-                    ma60 REAL,
-                    ma5_slope REAL,
-                    ma10_slope REAL,
-                    ma20_slope REAL,
-                    ma_arrangement TEXT,
-                    ma_signal_strength INTEGER,
-                    ma_price_position TEXT,
+                    ma5 REAL,                                    -- 5日均线值
+                    ma10 REAL,                                   -- 10日均线值
+                    ma20 REAL,                                   -- 20日均线值
+                    ma60 REAL,                                   -- 60日均线值
+                    ma5_slope REAL,                              -- 5日均线斜率（导数），负值表示下降趋势，正值表示上升趋势
+                    ma10_slope REAL,                             -- 10日均线斜率（导数），负值表示下降趋势，正值表示上升趋势
+                    ma20_slope REAL,                             -- 20日均线斜率（导数），负值表示下降趋势，正值表示上升趋势
+                    ma_arrangement TEXT,                         -- 均线排列状态: 多头排列、空头排列、混乱排列
+                    ma_signal_strength INTEGER,                  -- 均线信号强度: 0-5，数值越大信号越强
+                    ma_price_position TEXT,                      -- 价格相对于均线位置: 多头、空头、中性
 
                     -- 布林带数据
-                    bb_upper REAL,
-                    bb_middle REAL,
-                    bb_lower REAL,
-                    bb_position REAL,
-                    bb_is_oversold BOOLEAN,
-                    distance_to_lower REAL,
+                    bb_upper REAL,                               -- 布林带上轨值
+                    bb_middle REAL,                              -- 布林带中轨值（通常等于20日均线）
+                    bb_lower REAL,                               -- 布林带下轨值
+                    bb_position REAL,                            -- 价格在布林带中的位置 (0-1)，0表示在下轨，1表示在上轨
+                    bb_is_oversold BOOLEAN,                      -- 是否超跌（价格接近或跌破下轨）
+                    distance_to_lower REAL,                      -- 距离下轨的百分比，负值表示跌破下轨
 
                     -- 成交量数据
-                    volume_ma5 REAL,
-                    volume_percentile REAL,
-                    volume_status TEXT,
-                    volume_grade INTEGER,
-                    volume_trend TEXT,
-                    volume_change_rate REAL,
-                    volume_z_score REAL,
+                    volume_ma5 REAL,                             -- 5日成交量均值
+                    volume_percentile REAL,                      -- 成交量百分位 (0-100)，表示当前成交量在历史中的位置
+                    volume_status TEXT,                          -- 成交量状态: 放量、缩量、正常
+                    volume_grade INTEGER,                        -- 成交量等级: 1-5，5为最大成交量
+                    volume_trend TEXT,                           -- 成交量趋势: 上升、下降、稳定
+                    volume_change_rate REAL,                     -- 成交量变化率，正值为放量，负值为缩量
+                    volume_z_score REAL,                         -- 成交量Z分数，标准差化的成交量指标
 
                     -- ZigZag数据
-                    zigzag_key_points INTEGER,
-                    zigzag_recent_highs TEXT,
-                    zigzag_recent_lows TEXT,
+                    zigzag_key_points INTEGER,                   -- ZigZag指标识别的关键转折点数量
+                    zigzag_recent_highs TEXT,                    -- ZigZag识别的近期高点列表（JSON格式）
+                    zigzag_recent_lows TEXT,                     -- ZigZag识别的近期低点列表（JSON格式）
 
                     -- 分形数据
-                    fractal_highs TEXT,
-                    fractal_lows TEXT,
+                    fractal_highs TEXT,                          -- 分形分析识别的高点列表（JSON格式）
+                    fractal_lows TEXT,                           -- 分形分析识别的低点列表（JSON格式）
 
                     -- 斐波那契数据
-                    fib_swing_high REAL,
-                    fib_swing_low REAL,
-                    fib_retracement_levels TEXT,
-                    fib_current_levels TEXT,
+                    fib_swing_high REAL,                         -- 斐波那契分析的摆动高点价格
+                    fib_swing_low REAL,                          -- 斐波那契分析的摆动低点价格
+                    fib_retracement_levels TEXT,                 -- 斐波那契回撤位计算结果（JSON格式）
+                    fib_current_levels TEXT,                     -- 当前价格接近的斐波那契回撤位（JSON格式）
 
                     -- 综合分析
-                    comprehensive_rating TEXT,
-                    investment_advice TEXT,
-                    signal_count INTEGER,
-                    crossover_signals TEXT,
-                    turning_signals TEXT,
+                    comprehensive_rating TEXT,                   -- 综合评级: 强烈超跌、可能超跌、观望、正常
+                    investment_advice TEXT,                      -- 投资建议: 买入、持有、观望、卖出
+                    signal_count INTEGER,                        -- 信号总数，所有技术指标信号的数量
+                    crossover_signals TEXT,                      -- 均线交叉信号列表（JSON格式）
+                    turning_signals TEXT,                        -- 转折信号列表（JSON格式）
 
                     -- 元数据
-                    instrument_type TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    instrument_type TEXT,                        -- 产品类型: stock、etf、industry_sector等
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- 创建时间
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- 更新时间
                     UNIQUE(code, analysis_date, instrument_type)
                 )
             """)
@@ -1007,9 +1007,9 @@ class IndustryDataDB:
                     safe_float(ma_data.get("MA10")),
                     safe_float(ma_data.get("MA20")),
                     safe_float(ma_data.get("MA60")),
-                    safe_float(derivative_analysis.get("MA5")),
-                    safe_float(derivative_analysis.get("MA10")),
-                    safe_float(derivative_analysis.get("MA20")),
+                    safe_float(derivative_analysis.get("MA5导数")),
+                    safe_float(derivative_analysis.get("MA10导数")),
+                    safe_float(derivative_analysis.get("MA20导数")),
                     safe_str(ma_analysis.get("排列状态")),
                     safe_int(ma_analysis.get("信号强度")),
                     safe_str(ma_analysis.get("价格位置")),
