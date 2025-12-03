@@ -1252,6 +1252,11 @@ class TechnicalAnalyzer:
         crossover_signals = self.detect_ma_crossover_signals(ma_data, lookback=5)
         turning_points = self.detect_turning_points(close_prices, ma_data, latest_close)
 
+        # 计算MFI指标
+        mfi_values = self.calculate_mfi(high_prices, low_prices, close_prices, volumes)
+        latest_mfi = mfi_values.iloc[-1] if not pd.isna(mfi_values.iloc[-1]) else None
+        mfi_signals = self.analyze_mfi_signals(mfi_values, df['日期'])
+
         bb_is_oversold = latest_close < latest_lower_band
 
         distance_to_lower = ((latest_close - latest_lower_band) / latest_lower_band) * 100
@@ -1332,7 +1337,19 @@ class TechnicalAnalyzer:
             if volume_analysis["成交量趋势"] in ["明显放量", "放量"] and volume_analysis["成交量等级"] <= 2:
                 综合分析信号.append(f"底部区域出现{volume_analysis['成交量趋势']}({volume_analysis['成交量变化率']:+.1f}%)")
 
-        综合评级 = "强烈超跌" if len(综合分析信号) >= 3 else "可能超跌" if len(综合分析信号) >= 2 else "观望" if len(综合分析信号) >= 1 else "正常"
+        # 添加MFI相关的分析信号
+        if latest_mfi is not None:
+            if latest_mfi > 80:
+                综合分析信号.append(f"MFI超买({latest_mfi:.1f})")
+            elif latest_mfi < 20:
+                综合分析信号.append(f"MFI超卖({latest_mfi:.1f})")
+
+            # 检查最近是否有超卖信号
+            recent_oversold = mfi_signals.get("oversold_signals", [])[-3:]  # 最近3个超卖信号
+            if recent_oversold:
+                综合分析信号.append("近期MFI出现超卖信号")
+
+        综合评级 = "强烈超跌" if len(综合分析信号) >= 4 else "可能超跌" if len(综合分析信号) >= 3 else "观望" if len(综合分析信号) >= 2 else "正常"
 
         return {
             "板块名称": query_code,
@@ -1346,6 +1363,14 @@ class TechnicalAnalyzer:
             "转折点分析": turning_points,
 
             "成交量分析": volume_analysis,
+
+            "MFI分析": {
+                "最新MFI": round(latest_mfi, 2) if latest_mfi is not None else None,
+                "MFI信号": mfi_signals,
+                "超买信号": len(mfi_signals.get("overbought_signals", [])),
+                "超卖信号": len(mfi_signals.get("oversold_signals", [])),
+                "MFI状态": "超买" if latest_mfi and latest_mfi > 80 else "超卖" if latest_mfi and latest_mfi < 20 else "正常"
+            },
 
             "布林带分析": {
                 "上轨": latest_upper_band,
@@ -1785,6 +1810,122 @@ class TechnicalAnalyzer:
             return "👀 部分技术指标显示调整，建议观望等待更好机会"
         else:
             return "✅ 技术指标相对正常，可按既定策略操作"
+
+    def calculate_mfi(self, high_prices, low_prices, close_prices, volumes, period=14):
+        """
+        计算MFI（Money Flow Index）指标
+
+        MFI是一种结合价格和成交量的技术指标，用于衡量买卖压力。
+        类似于RSI，但考虑了成交量因素。
+
+        Args:
+            high_prices: 最高价序列
+            low_prices: 最低价序列
+            close_prices: 收盘价序列
+            volumes: 成交量序列
+            period: 计算周期，默认为14
+
+        Returns:
+            pandas.Series: MFI值序列，取值范围0-100
+        """
+        if len(high_prices) < period + 1:
+            return pd.Series([np.nan] * len(high_prices))
+
+        # 计算典型价格 (Typical Price)
+        typical_price = (high_prices + low_prices + close_prices) / 3
+
+        # 计算资金流量 (Money Flow)
+        money_flow = typical_price * volumes
+
+        # 初始化正负资金流量数组
+        positive_mf = []
+        negative_mf = []
+
+        for i in range(1, len(typical_price)):
+            if typical_price[i] > typical_price[i-1]:
+                positive_mf.append(money_flow[i])
+                negative_mf.append(0)
+            elif typical_price[i] < typical_price[i-1]:
+                positive_mf.append(0)
+                negative_mf.append(money_flow[i])
+            else:
+                positive_mf.append(0)
+                negative_mf.append(0)
+
+        # 将列表转换为numpy数组
+        positive_mf = np.array(positive_mf)
+        negative_mf = np.array(negative_mf)
+
+        # 计算周期内的正负资金流量总和
+        positive_mf_sum = pd.Series(positive_mf).rolling(window=period).sum()
+        negative_mf_sum = pd.Series(negative_mf).rolling(window=period).sum()
+
+        # 计算资金流量比率 (Money Flow Ratio)
+        mfr = np.where(negative_mf_sum == 0, 100, positive_mf_sum / negative_mf_sum)
+
+        # 计算MFI
+        mfi = 100 - (100 / (1 + mfr))
+
+        # 创建与原始数据长度相同的Series，前面用NaN填充
+        mfi_series = pd.Series([np.nan] * (len(high_prices) - len(mfi)) + list(mfi))
+
+        return mfi_series
+
+    def analyze_mfi_signals(self, mfi_values, timestamps):
+        """
+        分析MFI信号，识别超买超卖和背离信号
+
+        Args:
+            mfi_values: MFI值序列
+            timestamps: 对应的时间戳序列
+
+        Returns:
+            dict: 包含各种MFI信号的字典
+        """
+        if len(mfi_values) < 2:
+            return {
+                "overbought_signals": [],
+                "oversold_signals": [],
+                "divergence_signals": []
+            }
+
+        overbought_signals = []
+        oversold_signals = []
+        divergence_signals = []
+
+        for i in range(len(mfi_values)):
+            if pd.isna(mfi_values.iloc[i]):
+                continue
+
+            mfi_value = mfi_values.iloc[i]
+            timestamp = timestamps.iloc[i] if i < len(timestamps) else None
+
+            # 超买信号 (MFI > 80)
+            if mfi_value > 80:
+                overbought_signals.append({
+                    "index": i,
+                    "timestamp": timestamp,
+                    "mfi_value": mfi_value,
+                    "signal_type": "超买"
+                })
+
+            # 超卖信号 (MFI < 20)
+            elif mfi_value < 20:
+                oversold_signals.append({
+                    "index": i,
+                    "timestamp": timestamp,
+                    "mfi_value": mfi_value,
+                    "signal_type": "超卖"
+                })
+
+        # 检测背离信号（需要价格数据）
+        # 这里简化处理，实际使用时需要传入价格数据进行背离分析
+
+        return {
+            "overbought_signals": overbought_signals,
+            "oversold_signals": oversold_signals,
+            "divergence_signals": divergence_signals
+        }
 
     def analyze_instruments_from_macd_data(self, instrument_type, date_str=None):
         """
