@@ -25,6 +25,7 @@ from rewrite_ak_share.rewrite_index_zh_em import index_zh_a_hist
 from rewrite_ak_share.rewrite_fund_etf_em import fund_etf_hist_min_em
 from rewrite_ak_share.rewrite_stock_hist_em import stock_zh_a_hist,stock_zh_a_hist_min_em
 from db_manager import IndustryDataDB
+from scheduled_data_collector import generate_etf_data,generate_stock_data
 # hh = ak.index_csindex_all()
 
 # print(hh)
@@ -147,15 +148,27 @@ symbol = "000001"
 # fund_etf_hist_min_em(symbol="515170", period="1", adjust="", start_date="2025-10-15 09:00:00", end_date="2026-03-20 17:40:00")
 # db = IndustryDataDB("industry_data.db")
 # db.clear_all_macd_data()
+#################################################################
+# unifiedDataCollector = UnifiedDataCollector()
+# unifiedDataCollector.collect_all_historical_min_data(instrument_type='stock', period="30")
+# generate_stock_data()
 # ff = UnifiedAnalyzer()
 # ff.analyze_all_instruments('stock')
+# signals = ff.analyze_macd_convergence_patterns('stock')
 # uu = UnifiedDataCollector()
 # uu.collect_all_daily_data(instrument_type = 'stock')
+# tt = TechnicalAnalyzer()
+# tt.analyze_instruments_from_macd_data('stock')
 
-# ff.analyze_all_instruments('etf')
-# signals = ff.analyze_macd_convergence_patterns('etf')
-
-
+generate_etf_data()
+ff = UnifiedAnalyzer()
+ff.analyze_all_instruments('etf')
+signals = ff.analyze_macd_convergence_patterns('etf')
+uu = UnifiedDataCollector()
+uu.collect_all_daily_data(instrument_type = 'etf')
+tt = TechnicalAnalyzer()
+tt.analyze_instruments_from_macd_data('etf')
+#######################################################################
 
 # fund_etf_spot_em_df = ak.fund_etf_spot_em()
 # print(fund_etf_spot_em_df)
@@ -183,8 +196,7 @@ symbol = "000001"
 
 # uu = UnifiedDataCollector()
 # uu.collect_all_historical_min_data('stock',period = '30')
-tt = TechnicalAnalyzer()
-tt.analyze_instruments_from_macd_data('stock')
+
 # db = IndustryDataDB("industry_data.db")
 
 
