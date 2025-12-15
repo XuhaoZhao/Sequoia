@@ -209,7 +209,7 @@ def scheduled_data_collection():
     # logger.info("结束分析stock dayK")
 
 
-def setup_scheduled_jobs(test_mode=False):
+def  setup_scheduled_jobs(test_mode=False):
     """
     设置定时任务，使用APScheduler
 
@@ -227,7 +227,7 @@ def setup_scheduled_jobs(test_mode=False):
     # 添加定时任务：每天15:05执行数据收集
     scheduler.add_job(
         func=scheduled_data_collection,
-        trigger=CronTrigger(hour=18, minute=17),
+        trigger=CronTrigger(hour=21, minute=10),
         id='daily_data_collection',
         name='每日数据收集任务',
         replace_existing=True
