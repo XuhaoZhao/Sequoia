@@ -1215,3 +1215,95 @@ class IndustryDataDB:
             except sqlite3.Error as e:
                 return {"error": f"获取统计信息失败: {e}"}
 
+    def delete_old_daily_k_analysis(self, days: int = 3) -> int:
+        """
+        删除指定天数之前的日K分析数据
+
+        Args:
+            days: 保留最近几天的数据，默认删除3天前的数据
+
+        Returns:
+            成功删除的记录数
+        """
+        try:
+            # 计算截止日期
+            from datetime import datetime, timedelta
+            cutoff_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+
+            with self.get_connection() as conn:
+                # 先查询将要删除的记录数量
+                cursor = conn.execute("""
+                    SELECT COUNT(*) as count
+                    FROM daily_k_analysis
+                    WHERE analysis_date < ?
+                """, (cutoff_date,))
+                delete_count = cursor.fetchone()[0]
+
+                if delete_count == 0:
+                    print(f"没有找到 {cutoff_date} 之前的数据需要删除")
+                    return 0
+
+                # 执行删除操作
+                cursor = conn.execute("""
+                    DELETE FROM daily_k_analysis
+                    WHERE analysis_date < ?
+                """, (cutoff_date,))
+
+                conn.commit()
+
+                print(f"成功删除 {delete_count} 条 {cutoff_date} 之前的日K分析数据")
+                return delete_count
+
+        except sqlite3.Error as e:
+            print(f"删除旧日K分析数据失败: {e}")
+            return 0
+
+    def query_positive_ma5_slope_today(self, instrument_type: str = None) -> pd.DataFrame:
+        """
+        查询当日5日均线斜率大于0的数据
+
+        Args:
+            instrument_type: 产品类型 (stock, etf, industry_sector等)，为None时查询所有
+
+        Returns:
+            包含当日5日均线斜率大于0的数据DataFrame
+        """
+        try:
+            # 获取当天的日期
+            from datetime import datetime
+            today = datetime.now().strftime('%Y-%m-%d')
+
+            with self.get_connection() as conn:
+                sql = """
+                    SELECT code, name, analysis_date, latest_price,
+                           ma5, ma5_slope, ma10, ma20, ma60,
+                           ma_arrangement, ma_signal_strength, ma_price_position,
+                           comprehensive_rating, investment_advice,
+                           instrument_type, created_at
+                    FROM daily_k_analysis
+                    WHERE analysis_date = ? AND ma5_slope IS NOT NULL AND ma5_slope > 0
+                """
+                params = [today]
+
+                if instrument_type:
+                    sql += " AND instrument_type = ?"
+                    params.append(instrument_type)
+
+                sql += " ORDER BY ma5_slope DESC, code"
+
+                try:
+                    df = pd.read_sql_query(sql, conn, params=params)
+                    if not df.empty:
+                        print(f"找到 {len(df)} 条当日5日均线斜率大于0的数据")
+                    else:
+                        print(f"当日 {today} 没有找到5日均线斜率大于0的数据")
+                    return df
+
+                except sqlite3.Error as e:
+                    print(f"查询当日5日均线斜率数据失败: {e}")
+                    return pd.DataFrame()
+
+        except Exception as e:
+            print(f"查询当日5日均线斜率数据发生错误: {e}")
+            return pd.DataFrame()
+
