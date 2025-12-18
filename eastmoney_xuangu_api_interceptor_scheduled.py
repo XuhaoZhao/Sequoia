@@ -1076,7 +1076,7 @@ def main():
 
     # 配置参数
     config = {
-        "xuangu_id": "xc0d647de27193013bb2",
+        "xuangu_id": "xc0e3d869f99930168c0",
         "color": "w",
         "action": "edit_way",
         "type": "stock",               # 数据类型

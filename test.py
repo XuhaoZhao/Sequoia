@@ -157,7 +157,7 @@ symbol = "000001"
 # signals = ff.analyze_macd_convergence_patterns('stock')
 # uu = UnifiedDataCollector()
 # uu.collect_all_daily_data(instrument_type = 'stock')
-# tt = TechnicalAnalyzer()
+# tt = TechnicalAnalyzer()  
 # tt.analyze_instruments_from_macd_data('stock')
 
 generate_etf_data()
@@ -188,8 +188,7 @@ tt.analyze_instruments_from_macd_data('etf')
 # tt = ff.analyze_all_instruments(instrument_type="stock")
 # print(tt)
 # db = IndustryDataDB("industry_data.db")
-# df_latest = db.query_kline_data('1d', code='159928', limit=1)
-# print(df_latest)
+# df_latest = db.clear_all_macd_data()
 
 
 

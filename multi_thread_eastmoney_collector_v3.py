@@ -98,7 +98,7 @@ class ScheduledDataCollector:
 
             # 执行数据收集（这里会内部刷新页面，但浏览器实例复用）
             success = self.interceptor.scheduled_intercept_and_save(
-                xuangu_id=self.config.get("xuangu_id", "xc0d647de27193013bb2"),
+                xuangu_id=self.config.get("xuangu_id", "xc0e3d869f99930168c0"),
                 color=self.config.get("color", "w"),
                 action=self.config.get("action", "edit_way"),
                 type=self.data_type,
@@ -276,7 +276,7 @@ class ScheduledDataCollectorManager:
             # 添加股票收集器
             stock_config = base_config.copy()
             stock_config.update({
-                "xuangu_id": stock_config.get("stock_xuangu_id", "xc0d647de27193013bb2"),
+                "xuangu_id": stock_config.get("stock_xuangu_id", "xc0e3d869f99930168c0"),
                 "type": "stock"
             })
             self.add_collector("stock_collector", "stock", stock_config)
