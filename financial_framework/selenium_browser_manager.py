@@ -92,6 +92,7 @@ class SeleniumBrowserManager:
                                     self.logger.info(f"找到本地ChromeDriver: {driver_path}")
                                     return driver_path
                         else:
+                            # 如果版本发生更新，需要手动把旧版本删掉，这样也能清理存储空间
                             if file == 'chromedriver' and not file.endswith('.zip'):
                                 driver_path = os.path.join(root, file)
                                 # 验证是否可执行

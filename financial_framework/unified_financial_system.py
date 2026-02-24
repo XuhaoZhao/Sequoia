@@ -120,6 +120,36 @@ class UnifiedDataCollector(LoggerMixin):
         instrument.collect_all_daily_data(delay_seconds)
     
     @log_method_call(include_args=False)
+    def collect_daily_data_from_excel(self, instrument_type='stock', delay_seconds=None):
+        """收集指定类型产品的日K数据（遍历该类型下所有子项）
+
+        Args:
+            instrument_type: 产品类型 ('industry_sector', 'stock', 'etf', 'concept_sector', 'index')
+            delay_seconds: 延迟秒数（批量收集时使用），如果为None则使用各类的默认延迟参数
+        """
+        instruments_map = {
+            'industry_sector': self.industry_sector,
+            'stock': self.stock,
+            'etf': self.etf,
+            'concept_sector': self.concept_sector,
+            'index': self.index
+        }
+
+        if instrument_type not in instruments_map:
+            self.log_warning(f"未知的产品类型: {instrument_type}")
+            return
+
+        instrument = instruments_map[instrument_type]
+
+        # 如果没有指定延迟时间，使用类的默认延迟参数
+        if delay_seconds is None:
+            delay_seconds = instrument.__class__.delay_seconds
+            self.log_info(f"使用{instrument.get_instrument_type()}的默认延迟时间: {delay_seconds}秒")
+
+        # 调用基类的 collect_all_daily_data 方法
+        instrument.collect_daily_data_from_excel(delay_seconds)
+    
+    @log_method_call(include_args=False)
     def collect_realtime_1min_data(self, instrument_type):
         """收集指定类型的1分钟实时数据
 

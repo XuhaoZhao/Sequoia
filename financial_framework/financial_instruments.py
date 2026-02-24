@@ -420,6 +420,68 @@ class FinancialInstrument(ABC, LoggerMixin):
         print(f"统计: 总计 {total_instruments} 个产品, 跳过 {skipped_count} 个, 更新 {updated_count} 个")
         if skipped_count > 0:
             print(f"节省时间: 约 {skipped_count * delay_seconds / 60:.1f} 分钟")
+    
+
+    
+    def collect_daily_data_from_excel(self, delay_seconds=None):
+        """获取所有产品的日K数据
+
+        在获取数据前会检查每个产品的最新数据日期，如果已是前一个交易日的数据则跳过
+
+        Args:
+            delay_seconds: 延迟秒数，如果为None则使用类的默认值
+        """
+        print(f"开始获取所有{self.get_instrument_type()}日K数据 - {datetime.now()}")
+
+        # 根据当前instruments的type，从macd_data读取当天的数据并去重得到所有的instruments
+        instruments = self.get_all_instruments()
+
+        # 如果从macd_data没有获取到数据，则使用原来的方法
+        if not instruments:
+            print(f"无法从macd_data读取股票信息，使用默认方法获取产品列表")
+            instruments = self.get_all_instruments()
+
+        total_instruments = len(instruments)
+
+        if delay_seconds is None:
+            # 使用实现类自定义的延迟参数
+            delay_seconds = self.__class__.delay_seconds
+            print(f"使用{self.get_instrument_type()}的默认延迟时间: {delay_seconds}秒")
+
+        estimated_total_time = delay_seconds * total_instruments
+        print(f"预计总耗时{estimated_total_time/60:.1f}分钟，共{total_instruments}个{self.get_instrument_type()}")
+
+        instruments = list(reversed(instruments))
+
+        # 统计变量
+        skipped_count = 0
+        updated_count = 0
+
+        for i, instrument_info in enumerate(instruments, 1):
+            name = instrument_info.get('name', instrument_info.get('板块名称', ''))
+            code = instrument_info.get('code', instrument_info.get('板块代码', ''))
+
+            # 检查数据是否已是最新的
+            if self._is_daily_data_up_to_date(code):
+                print(f"跳过 {name}({code}) - 数据已是最新 ({i}/{total_instruments})")
+                skipped_count += 1
+                continue
+
+            print(f"正在获取{name}({code})的日K数据... ({i}/{total_instruments})")
+
+            daily_data = self.get_daily_data(instrument_info)
+            if daily_data is not None and len(daily_data) > 0:
+                self.save_daily_data(instrument_info, daily_data)
+                updated_count += 1
+
+            if i < total_instruments:
+                time.sleep(delay_seconds)
+
+        print(f"所有{self.get_instrument_type()}日K数据获取完成 - {datetime.now()}")
+        print(f"统计: 总计 {total_instruments} 个产品, 跳过 {skipped_count} 个, 更新 {updated_count} 个")
+        if skipped_count > 0:
+            print(f"节省时间: 约 {skipped_count * delay_seconds / 60:.1f} 分钟")    
+
 
     def _get_instruments_from_macd_data(self):
         """从macd_data表读取当天的数据并去重得到所有的instruments

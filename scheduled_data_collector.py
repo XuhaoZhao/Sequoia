@@ -207,6 +207,38 @@ def scheduled_data_collection():
     # logger.info("开始分析stock dayK")
     # technicalAnalyzer.analyze_instruments_from_macd_data('stock')
     # logger.info("结束分析stock dayK")
+def scheduled_daliy_data_collection():
+    """
+    定时数据收集任务
+    只在工作日运行
+    """
+    logger.info("=" * 50)
+    logger.info("开始执行日K数据收集任务")
+    logger.info(f"当前时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    # 生成ETF数据
+    etf_success = generate_etf_data()
+
+    # 等待一段时间再生成股票数据，避免频繁请求
+    time.sleep(5)
+
+    # 生成股票数据
+    stock_success = generate_stock_data()
+
+    # 总结执行结果
+    logger.info("=" * 50)
+    logger.info("定时数据收集任务完成")
+    logger.info(f"ETF数据收集: {'成功' if etf_success else '失败'}")
+    logger.info(f"股票数据收集: {'成功' if stock_success else '失败'}")
+    logger.info("=" * 50)
+    time.sleep(50)
+    logger.info("开始获取etf 日K数据")
+    unifiedDataCollector = UnifiedDataCollector()
+    # unifiedDataCollector.collect_daily_data_from_excel(instrument_type='etf', delay_seconds=30)
+    logger.info("结束获取etf 日K数据")
+    time.sleep(5)
+    logger.info("开始获取stock 日K数据")
+    unifiedDataCollector.collect_daily_data_from_excel(instrument_type='stock', delay_seconds=10)
+    logger.info("结束获取stock 日K数据")
 
 
 def  setup_scheduled_jobs(test_mode=False):
@@ -226,7 +258,7 @@ def  setup_scheduled_jobs(test_mode=False):
 
     # 添加定时任务：每天15:05执行数据收集
     scheduler.add_job(
-        func=scheduled_data_collection,
+        func=scheduled_daliy_data_collection,
         trigger=CronTrigger(hour=21, minute=10),
         id='daily_data_collection',
         name='每日数据收集任务',
@@ -241,7 +273,7 @@ def  setup_scheduled_jobs(test_mode=False):
     if test_mode:
         logger.info("测试模式：立即执行一次数据收集任务")
         scheduler.add_job(
-            func=scheduled_data_collection,
+            func=scheduled_daliy_data_collection,
             trigger='date',  # 立即执行一次
             id='test_data_collection',
             name='测试数据收集任务'
