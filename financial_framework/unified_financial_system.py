@@ -302,6 +302,10 @@ class UnifiedAnalyzer:
                                 if signal['type'] == '金叉':
                                     timestamp = signal['time']
                                     if timestamp is not None and timestamp.strftime('%Y-%m-%d') == today:
+                                        # 检查时间是否为14:00或14:30
+                                        signal_time = timestamp.strftime('%H:%M')
+                                        if signal_time not in ['13:30','14:00', '14:30']:
+                                            continue
                                         # 检查对应的60分钟MACD条件（红柱子 OR 绿柱子缩小）
                                         is_red_histogram = self.is_60m_macd_positive_at_time(timestamp, macd_60m, kline_data_60m)
                                         is_shrinking_green = self.is_60m_histogram_shrinking(timestamp, macd_60m, kline_data_60m)

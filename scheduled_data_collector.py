@@ -61,7 +61,7 @@ def generate_etf_data():
 
         # 调用拦截函数获取ETF数据
         success = interceptor.intercept_and_save_to_csv(
-            xuangu_id="xc0d38036a3d93000c67",
+            xuangu_id="xc0e70095ec893006c72",
             color="w",
             action="edit_way",
             type="etf",                      # ETF数据类型
@@ -227,9 +227,10 @@ def  setup_scheduled_jobs(test_mode=False):
     # 添加定时任务：每天15:05执行数据收集
     scheduler.add_job(
         func=scheduled_data_collection,
-        trigger=CronTrigger(hour=21, minute=10),
+        trigger=CronTrigger(hour=20 , minute=10),
         id='daily_data_collection',
         name='每日数据收集任务',
+        misfire_grace_time=60, # 允许延迟 60 秒内仍然执行
         replace_existing=True
     )
 
