@@ -1307,3 +1307,250 @@ class IndustryDataDB:
             print(f"查询当日5日均线斜率数据发生错误: {e}")
             return pd.DataFrame()
 
+    def _get_ma20_above_ma60_table_name(self, year_month: str) -> str:
+        """
+        生成EXPMA20>EXPMA60选股结果表名
+
+        Args:
+            year_month: 年月 (格式: YYYY-MM)
+
+        Returns:
+            表名
+        """
+        return f"expma_selection_{year_month.replace('-', '_')}"
+
+    def _create_ma20_above_ma60_table(self, table_name: str, year_month: str):
+        """
+        创建EXPMA20>EXPMA60选股结果表
+
+        Args:
+            table_name: 表名
+            year_month: 年月
+        """
+        with self.get_connection() as conn:
+            # 创建选股结果表
+            conn.execute(f"""
+                CREATE TABLE IF NOT EXISTS {table_name} (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    code TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    instrument_type TEXT NOT NULL,
+                    select_date TEXT NOT NULL,
+                    close_price REAL NOT NULL,
+                    expma20 REAL NOT NULL,
+                    expma60 REAL NOT NULL,
+                    expma20_slope REAL NOT NULL,
+                    deviation REAL NOT NULL,
+                    trend_strength REAL NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(code, select_date, instrument_type)
+                )
+            """)
+
+            # 创建索引
+            conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_code ON {table_name}(code)")
+            conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_select_date ON {table_name}(select_date)")
+            conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_instrument_type ON {table_name}(instrument_type)")
+            conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_code_date_type ON {table_name}(code, select_date, instrument_type)")
+            conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_expma20_slope ON {table_name}(expma20_slope)")
+            conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_deviation ON {table_name}(deviation)")
+            conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_trend_strength ON {table_name}(trend_strength)")
+
+            # 记录表信息
+            conn.execute("""
+                INSERT OR REPLACE INTO table_info (table_name, period, year_month)
+                VALUES (?, ?, ?)
+            """, (table_name, 'expma_selection', year_month))
+
+            conn.commit()
+
+    def ensure_ma20_above_ma60_table_exists(self, select_date: str) -> str:
+        """
+        确保指定时间的选股结果表存在
+
+        Args:
+            select_date: 选股日期 (格式: YYYY-MM-DD)
+
+        Returns:
+            表名
+        """
+        # 提取年月
+        dt = datetime.strptime(select_date, '%Y-%m-%d')
+        year_month = dt.strftime('%Y-%m')
+
+        table_name = self._get_ma20_above_ma60_table_name(year_month)
+
+        # 检查表是否存在
+        with self.get_connection() as conn:
+            cursor = conn.execute("""
+                SELECT name FROM sqlite_master
+                WHERE type='table' AND name=?
+            """, (table_name,))
+
+            if not cursor.fetchone():
+                self._create_ma20_above_ma60_table(table_name, year_month)
+
+        return table_name
+
+    def insert_ma20_above_ma60_selection(self, selection_data: List[Dict]) -> int:
+        """
+        插入EXPMA20>EXPMA60选股结果
+
+        Args:
+            selection_data: 选股结果列表，每个元素包含:
+                - code: 股票/ETF代码
+                - name: 股票/ETF名称
+                - instrument_type: 产品类型 (stock/etf)
+                - select_date: 选股日期
+                - close_price: 收盘价
+                - expma20: 20日指数移动平均
+                - expma60: 60日指数移动平均
+                - expma20_slope: 20日EXPMA斜率
+                - deviation: 偏离程度（百分比）
+                - trend_strength: 趋势强度
+
+        Returns:
+            成功插入的记录数
+        """
+        if not selection_data:
+            return 0
+
+        inserted_count = 0
+
+        # 按年月分组数据
+        monthly_data = {}
+        for record in selection_data:
+            select_date = record['select_date']
+            year_month = datetime.strptime(select_date, '%Y-%m-%d').strftime('%Y-%m')
+            if year_month not in monthly_data:
+                monthly_data[year_month] = []
+            monthly_data[year_month].append(record)
+
+        # 按月插入数据
+        for year_month, records in monthly_data.items():
+            table_name = self._get_ma20_above_ma60_table_name(year_month)
+            self.ensure_ma20_above_ma60_table_exists(records[0]['select_date'])
+
+            with self.get_connection() as conn:
+                for record in records:
+                    try:
+                        conn.execute(f"""
+                            INSERT OR REPLACE INTO {table_name}
+                            (code, name, instrument_type, select_date, close_price, expma20, expma60, expma20_slope, deviation, trend_strength)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            record['code'],
+                            record['name'],
+                            record['instrument_type'],
+                            record['select_date'],
+                            record['close_price'],
+                            record['expma20'],
+                            record['expma60'],
+                            record['expma20_slope'],
+                            record['deviation'],
+                            record['trend_strength']
+                        ))
+                        inserted_count += 1
+                    except sqlite3.Error as e:
+                        print(f"插入选股结果失败: {e}, 记录: {record}")
+                        continue
+
+                conn.commit()
+
+        return inserted_count
+
+    def query_ma20_above_ma60_selection(self, select_date: str = None, start_date: str = None,
+                                       end_date: str = None, code: str = None,
+                                       instrument_type: str = None,
+                                       min_deviation: float = None, min_trend_strength: float = None,
+                                       limit: int = None) -> pd.DataFrame:
+        """
+        查询EXPMA20>EXPMA60选股结果
+
+        Args:
+            select_date: 选股日期 (格式: YYYY-MM-DD)
+            start_date: 开始日期 (格式: YYYY-MM-DD)
+            end_date: 结束日期 (格式: YYYY-MM-DD)
+            code: 股票/ETF代码，为None时查询所有
+            instrument_type: 产品类型 (stock/etf)，为None时查询所有
+            min_deviation: 最小偏离程度（百分比）
+            min_trend_strength: 最小趋势强度
+            limit: 限制返回记录数
+
+        Returns:
+            包含选股结果的DataFrame
+        """
+        # 确定需要查询的表
+        tables_to_query = self._get_tables_for_date_range('expma_selection', start_date, end_date)
+
+        # 如果指定了单个日期，重新获取表列表
+        if select_date and not start_date and not end_date:
+            year_month = datetime.strptime(select_date, '%Y-%m-%d').strftime('%Y-%m')
+            table_name = self._get_ma20_above_ma60_table_name(year_month)
+            tables_to_query = [table_name]
+
+        if not tables_to_query:
+            return pd.DataFrame()
+
+        all_data = []
+
+        with self.get_connection() as conn:
+            for table_name in tables_to_query:
+                # 构建查询SQL
+                sql = f"SELECT * FROM {table_name} WHERE 1=1"
+                params = []
+
+                if select_date:
+                    sql += " AND select_date = ?"
+                    params.append(select_date)
+
+                if start_date:
+                    sql += " AND select_date >= ?"
+                    params.append(start_date)
+
+                if end_date:
+                    sql += " AND select_date <= ?"
+                    params.append(end_date)
+
+                if code:
+                    sql += " AND code = ?"
+                    params.append(code)
+
+                if instrument_type:
+                    sql += " AND instrument_type = ?"
+                    params.append(instrument_type)
+
+                if min_deviation is not None:
+                    sql += " AND deviation >= ?"
+                    params.append(min_deviation)
+
+                if min_trend_strength is not None:
+                    sql += " AND trend_strength >= ?"
+                    params.append(min_trend_strength)
+
+                sql += " ORDER BY select_date DESC, trend_strength DESC"
+
+                if limit and len(tables_to_query) == 1:  # 只有一个表时才应用limit
+                    sql += f" LIMIT {limit}"
+
+                try:
+                    df = pd.read_sql_query(sql, conn, params=params)
+                    if not df.empty:
+                        all_data.append(df)
+                except sqlite3.Error as e:
+                    print(f"查询表 {table_name} 失败: {e}")
+                    continue
+
+        if not all_data:
+            return pd.DataFrame()
+
+        # 合并所有数据
+        result_df = pd.concat(all_data, ignore_index=True)
+        result_df = result_df.sort_values(['select_date', 'trend_strength'], ascending=[False, False]).reset_index(drop=True)
+
+        # 应用limit（如果有多个表）
+        if limit and len(result_df) > limit:
+            result_df = result_df.head(limit)
+
+        return result_df
+
