@@ -276,7 +276,7 @@ class ScheduledDataCollectorManager:
             # 添加股票收集器
             stock_config = base_config.copy()
             stock_config.update({
-                "xuangu_id": stock_config.get("stock_xuangu_id", "xc0e3d869f99930168c0"),
+                "xuangu_id": stock_config.get("stock_xuangu_id", "xc0e3d869f9 9930168c0"),
                 "type": "stock"
             })
             self.add_collector("stock_collector", "stock", stock_config)
@@ -284,7 +284,7 @@ class ScheduledDataCollectorManager:
             # 添加ETF收集器
             etf_config = base_config.copy()
             etf_config.update({
-                "xuangu_id": etf_config.get("etf_xuangu_id", "xc0d38036a3d93000c67"),
+                "xuangu_id": etf_config.get("etf_xuangu_id", "xc0e70095ec893006c72"),
                 "type": "etf"
             })
             self.add_collector("etf_collector", "etf", etf_config)

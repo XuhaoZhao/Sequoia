@@ -148,17 +148,19 @@ symbol = "000001"
 # fund_etf_hist_min_em(symbol="515170", period="1", adjust="", start_date="2025-10-15 09:00:00", end_date="2026-03-20 17:40:00")
 # db = IndustryDataDB("industry_data.db")
 # db.clear_all_macd_data()
-#################################################################
+
 # unifiedDataCollector = UnifiedDataCollector()
 # unifiedDataCollector.collect_all_historical_min_data(instrument_type='stock', period="30")
-# generate_stock_data()
-# ff = UnifiedAnalyzer()
-# ff.analyze_all_instruments('stock')
-# signals = ff.analyze_macd_convergence_patterns('stock')
-# uu = UnifiedDataCollector()
-# uu.collect_all_daily_data(instrument_type = 'stock')
-# tt = TechnicalAnalyzer()  
-# tt.analyze_instruments_from_macd_data('stock')
+#################################################################
+
+generate_stock_data()
+ff = UnifiedAnalyzer()
+ff.analyze_all_instruments('stock')
+signals = ff.analyze_macd_convergence_patterns('stock')
+uu = UnifiedDataCollector()
+uu.collect_all_daily_data(instrument_type = 'stock')
+tt = TechnicalAnalyzer()  
+tt.analyze_instruments_from_macd_data('stock')
 
 generate_etf_data()
 ff = UnifiedAnalyzer()
