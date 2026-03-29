@@ -170,6 +170,12 @@ tt = TechnicalAnalyzer()
 tt.analyze_instruments_from_macd_data('etf')
 #######################################################################
 
+futures_zh_spot_df = ak.futures_zh_spot(
+        symbol=",".join([dce_text, czce_text, shfe_text, gfex_text]),
+        market="CF",
+        adjust='0')
+
+
 # fund_etf_spot_em_df = ak.fund_etf_spot_em()
 # print(fund_etf_spot_em_df)
 
