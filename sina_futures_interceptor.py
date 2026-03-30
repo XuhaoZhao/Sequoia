@@ -12,6 +12,7 @@
 4. 自动解析期货数据
 5. 支持修改请求参数获取指定数据
 6. 支持导出CSV格式
+7. 从数据库自动加载活跃主力合约
 
 使用方法：
     # 创建拦截器实例
@@ -32,8 +33,14 @@
 import asyncio
 import re
 import csv
+import sys
+import os
 from datetime import datetime
 from playwright.async_api import async_playwright
+
+# 添加项目路径以导入 db_manager
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from db_manager import IndustryDataDB
 
 
 class SinaFuturesInterceptor:
@@ -373,17 +380,43 @@ def main():
     print("新浪财经期货实时数据拦截器 - 持续监听模式")
     print("=" * 80)
 
-    # 自定义要获取的期货代码列表
-    # 你可以修改这里的列表来获取不同的期货数据
-    custom_symbols = [
-        'nf_V2605',   # 聚氯乙烯
-        'nf_LC2703',  # 碳酸锂
-        'nf_TA2605',  # PTA
-        'nf_MA2605',  # 甲醇
-        'nf_AG2606',  # 白银
-    ]
+    # 从数据库自动加载成交额>20亿的主力合约
+    print("\n正在从数据库加载活跃主力合约...")
+    db = IndustryDataDB()
 
-    print(f"\n配置的期货代码列表: {', '.join(custom_symbols)}")
+    try:
+        # 获取成交额>20亿的主力合约
+        contracts = db.get_active_main_contracts_simple(min_amount=20.0)
+
+        if not contracts:
+            print("⚠ 警告: 数据库中没有找到符合条件的主力合约")
+            print("使用默认合约列表...")
+            # 使用默认合约列表
+            custom_symbols = [
+                'nf_V2605',   # 聚氯乙烯
+                'nf_LC2703',  # 碳酸锂
+                'nf_TA2605',  # PTA
+                'nf_MA2605',  # 甲醇
+                'nf_AG2606',  # 白银
+            ]
+        else:
+            # 转换为新浪财经格式：添加 'nf_' 前缀
+            custom_symbols = [f"nf_{contract['contract_code']}" for contract in contracts]
+            print(f"✓ 成功加载 {len(custom_symbols)} 个活跃主力合约")
+            print(f"合约列表: {', '.join(custom_symbols[:10])}{'...' if len(custom_symbols) > 10 else ''}")
+
+    except Exception as e:
+        print(f"⚠ 警告: 从数据库加载合约失败: {e}")
+        print("使用默认合约列表...")
+        custom_symbols = [
+            'nf_V2605',   # 聚氯乙烯
+            'nf_LC2703',  # 碳酸锂
+            'nf_TA2605',  # PTA
+            'nf_MA2605',  # 甲醇
+            'nf_AG2606',  # 白银
+        ]
+
+    print(f"\n配置的期货代码数量: {len(custom_symbols)}")
     print(f"将持续监听并记录所有实时数据，不丢失任何更新")
 
     # 创建拦截器

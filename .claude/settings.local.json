@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(python:*)",
-      "Bash(timeout:*)"
+      "Bash(timeout:*)",
+      "mcp__playwright__browser_navigate"
     ],
     "deny": [],
     "ask": []
