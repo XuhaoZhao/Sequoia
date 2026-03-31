@@ -103,49 +103,36 @@ class IndustryDataDB:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_macd_signal_type ON macd_data(signal_type)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_macd_notification_sent ON macd_data(notification_sent)")
 
-            # 创建期货合约基础数据表
+            # 创建期货合约基础数据表（九期网数据源）
+            # 表结构完全基于网页HTML数据设计
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS futures_contracts (
-                    contract_code TEXT PRIMARY KEY,              -- 合约代码（唯一标识）
-                    exchange TEXT NOT NULL,                       -- 交易所
-                    contract_name TEXT,                          -- 合约名称
-                    variety_code TEXT,                            -- 品种代码
-                    variety_name TEXT,                            -- 品种名称
-                    contract_multiplier REAL,                    -- 合约乘数
-                    min_tick REAL,                               -- 最小跳动
-                    open_fee_rate REAL,                          -- 开仓费率
-                    open_fee_per_lot REAL,                       -- 开仓费用/手
-                    close_fee_rate REAL,                         -- 平仓费率
-                    close_fee_per_lot REAL,                      -- 平仓费用/手
-                    close_today_fee_rate REAL,                   -- 平今费率
-                    close_today_fee_per_lot REAL,                -- 平今费用/手
-                    long_margin_rate REAL,                       -- 做多保证金率
-                    long_margin_per_lot REAL,                    -- 做多保证金/手
-                    short_margin_rate REAL,                      -- 做空保证金率
-                    short_margin_per_lot REAL,                   -- 做空保证金/手
-                    prev_settlement_price REAL,                  -- 上日结算价
-                    prev_close_price REAL,                       -- 上日收盘价
-                    latest_price REAL,                           -- 最新价
-                    volume INTEGER,                              -- 成交量
-                    open_interest INTEGER,                       -- 持仓量
-                    one_lot_open_fee REAL,                       -- 1手开仓费用
-                    one_lot_close_fee REAL,                      -- 1手平仓费用
-                    one_lot_close_today_fee REAL,                -- 1手平今费用
-                    long_one_lot_margin REAL,                    -- 做多1手保证金
-                    short_one_lot_margin REAL,                   -- 做空1手保证金
-                    one_lot_market_value REAL,                   -- 1手市值
-                    one_tick_close_pnl REAL,                     -- 1Tick平仓盈亏
-                    one_tick_close_net_profit REAL,              -- 1Tick平仓净利
-                    two_tick_close_net_profit REAL,              -- 2Tick平仓净利
-                    one_tick_close_return_rate REAL,             -- 1Tick平仓收益率%
-                    two_tick_close_return_rate REAL,             -- 2Tick平仓收益率%
-                    one_tick_close_today_net_profit REAL,        -- 1Tick平今净利
-                    two_tick_close_today_net_profit REAL,        -- 2Tick平今净利
-                    one_tick_close_today_return_rate REAL,       -- 1Tick平今收益率%
-                    two_tick_close_today_return_rate REAL,       -- 2Tick平今收益率%
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    contract_code TEXT NOT NULL,                  -- 合约代码，如 ag2606
+                    exchange TEXT NOT NULL,                       -- 交易所代码，如 SHFE
+                    variety_code TEXT NOT NULL,                   -- 品种代码，如 ag
+                    variety_name_cn TEXT,                         -- 品种中文名，如 白银
+                    current_price REAL,                           -- 现价
+                    price_limit TEXT,                             -- 涨/跌停板（原始文本）
+                    buy_margin_rate REAL,                         -- 买开保证金率（%）
+                    sell_margin_rate REAL,                        -- 卖开保证金率（%）
+                    margin_per_lot REAL,                          -- 保证金/每手（元）
+                    open_fee TEXT,                                -- 开仓手续费（原始文本，如 "0.5/万分之(13.5元)" 或 "40元"）
+                    open_fee_per_lot REAL,                        -- 开仓手续费/手（元）
+                    close_yesterday_fee TEXT,                     -- 平昨手续费（原始文本）
+                    close_yesterday_fee_per_lot REAL,             -- 平昨手续费/手（元）
+                    close_today_fee TEXT,                         -- 平今手续费（原始文本）
+                    close_today_fee_per_lot REAL,                 -- 平今手续费/手（元）
+                    tick_profit REAL,                             -- 每跳毛利/元
+                    total_fee REAL,                               -- 手续费(开+平)（元）
+                    tick_net_profit REAL,                         -- 每跳净利/元
+                    turnover_amount REAL,                         -- 成交额（单位：元，来自东方财富API）
                     is_main_contract INTEGER DEFAULT 0,          -- 是否主力合约 (0=否, 1=是)
+                    remark TEXT,                                  -- 备注
+                    source_url TEXT,                              -- 数据来源URL
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- 创建时间
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP  -- 更新时间
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- 更新时间
+                    UNIQUE(contract_code, exchange)
                 )
             """)
 
@@ -153,7 +140,8 @@ class IndustryDataDB:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_futures_exchange ON futures_contracts(exchange)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_futures_variety_code ON futures_contracts(variety_code)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_futures_is_main ON futures_contracts(is_main_contract)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_futures_variety_name ON futures_contracts(variety_name)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_futures_contract_code ON futures_contracts(contract_code)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_futures_variety_name ON futures_contracts(variety_name_cn)")
 
             # 创建股票日K结果分析数据表（精细版本）
             conn.execute("""
@@ -1608,10 +1596,10 @@ class IndustryDataDB:
 
     def insert_futures_contracts(self, contracts_data: List[Dict]) -> int:
         """
-        插入期货合约基础数据
+        插入期货合约数据（九期网数据源）
 
         Args:
-            contracts_data: 期货合约数据列表，每个元素包含解析出的38个字段
+            contracts_data: 期货合约数据列表
 
         Returns:
             成功插入的记录数
@@ -1624,63 +1612,39 @@ class IndustryDataDB:
         with self.get_connection() as conn:
             for record in contracts_data:
                 try:
-                    # 将"是否主力合约"转换为整数（"是"->1, "否"->0）
-                    is_main = 1 if record.get('是否主力合约') == '是' else 0
-
                     conn.execute("""
                         INSERT OR REPLACE INTO futures_contracts
-                        (contract_code, exchange, contract_name, variety_code, variety_name,
-                         contract_multiplier, min_tick, open_fee_rate, open_fee_per_lot,
-                         close_fee_rate, close_fee_per_lot, close_today_fee_rate, close_today_fee_per_lot,
-                         long_margin_rate, long_margin_per_lot, short_margin_rate, short_margin_per_lot,
-                         prev_settlement_price, prev_close_price, latest_price, volume, open_interest,
-                         one_lot_open_fee, one_lot_close_fee, one_lot_close_today_fee,
-                         long_one_lot_margin, short_one_lot_margin, one_lot_market_value,
-                         one_tick_close_pnl, one_tick_close_net_profit, two_tick_close_net_profit,
-                         one_tick_close_return_rate, two_tick_close_return_rate,
-                         one_tick_close_today_net_profit, two_tick_close_today_net_profit,
-                         one_tick_close_today_return_rate, two_tick_close_today_return_rate,
-                         is_main_contract, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        (contract_code, exchange, variety_code, variety_name_cn,
+                         current_price, price_limit,
+                         buy_margin_rate, sell_margin_rate, margin_per_lot,
+                         open_fee, open_fee_per_lot,
+                         close_yesterday_fee, close_yesterday_fee_per_lot,
+                         close_today_fee, close_today_fee_per_lot,
+                         tick_profit, total_fee, tick_net_profit,
+                         is_main_contract, remark, source_url, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
-                        record.get('合约代码'),        # contract_code
-                        record.get('交易所'),          # exchange
-                        record.get('合约名称'),        # contract_name
-                        record.get('品种代码'),        # variety_code
-                        record.get('品种名称'),        # variety_name
-                        self._safe_float(record.get('合约乘数')),  # contract_multiplier
-                        self._safe_float(record.get('最小跳动')),  # min_tick
-                        self._safe_float(record.get('开仓费率')),  # open_fee_rate
-                        self._safe_float(record.get('开仓费用/手')),  # open_fee_per_lot
-                        self._safe_float(record.get('平仓费率')),  # close_fee_rate
-                        self._safe_float(record.get('平仓费用/手')),  # close_fee_per_lot
-                        self._safe_float(record.get('平今费率')),  # close_today_fee_rate
-                        self._safe_float(record.get('平今费用/手')),  # close_today_fee_per_lot
-                        self._safe_float(record.get('做多保证金率')),  # long_margin_rate
-                        self._safe_float(record.get('做多保证金/手')),  # long_margin_per_lot
-                        self._safe_float(record.get('做空保证金率')),  # short_margin_rate
-                        self._safe_float(record.get('做空保证金/手')),  # short_margin_per_lot
-                        self._safe_float(record.get('上日结算价')),  # prev_settlement_price
-                        self._safe_float(record.get('上日收盘价')),  # prev_close_price
-                        self._safe_float(record.get('最新价')),  # latest_price
-                        self._safe_int(record.get('成交量')),  # volume
-                        self._safe_int(record.get('持仓量')),  # open_interest
-                        self._safe_float(record.get('1手开仓费用')),  # one_lot_open_fee
-                        self._safe_float(record.get('1手平仓费用')),  # one_lot_close_fee
-                        self._safe_float(record.get('1手平今费用')),  # one_lot_close_today_fee
-                        self._safe_float(record.get('做多1手保证金')),  # long_one_lot_margin
-                        self._safe_float(record.get('做空1手保证金')),  # short_one_lot_margin
-                        self._safe_float(record.get('1手市值')),  # one_lot_market_value
-                        self._safe_float(record.get('1Tick平仓盈亏')),  # one_tick_close_pnl
-                        self._safe_float(record.get('1Tick平仓净利')),  # one_tick_close_net_profit
-                        self._safe_float(record.get('2Tick平仓净利')),  # two_tick_close_net_profit
-                        self._safe_float(record.get('1Tick平仓收益率%')),  # one_tick_close_return_rate
-                        self._safe_float(record.get('2Tick平仓收益率%')),  # two_tick_close_return_rate
-                        self._safe_float(record.get('1Tick平今净利')),  # one_tick_close_today_net_profit
-                        self._safe_float(record.get('2Tick平今净利')),  # two_tick_close_today_net_profit
-                        self._safe_float(record.get('1Tick平今收益率%')),  # one_tick_close_today_return_rate
-                        self._safe_float(record.get('2Tick平今收益率%')),  # two_tick_close_today_return_rate
-                        is_main,  # is_main_contract
+                        record.get('合约代码'),                    # contract_code
+                        record.get('交易所'),                     # exchange
+                        record.get('品种代码'),                   # variety_code
+                        record.get('品种名称'),                   # variety_name_cn
+                        self._safe_float(record.get('最新价')),    # current_price
+                        record.get('涨跌停板'),                    # price_limit
+                        self._safe_float(record.get('做多保证金率')),  # buy_margin_rate
+                        self._safe_float(record.get('做空保证金率')),  # sell_margin_rate
+                        self._safe_float(record.get('做多1手保证金')),  # margin_per_lot
+                        record.get('开仓手续费原始文本'),          # open_fee（原始文本）
+                        self._safe_float(record.get('1手开仓费用')),  # open_fee_per_lot（只存储金额）
+                        record.get('平昨手续费原始文本'),          # close_yesterday_fee（原始文本）
+                        self._safe_float(record.get('1手平仓费用')),  # close_yesterday_fee_per_lot（只存储金额）
+                        record.get('平今手续费原始文本'),          # close_today_fee（原始文本）
+                        self._safe_float(record.get('1手平今费用')),  # close_today_fee_per_lot（只存储金额）
+                        self._safe_float(record.get('1Tick平仓盈亏')),  # tick_profit
+                        self._safe_float(record.get('手续费开平')),  # total_fee
+                        self._safe_float(record.get('1Tick平仓净利')),  # tick_net_profit
+                        1 if record.get('是否主力合约') == '是' else 0,  # is_main_contract
+                        record.get('备注', ''),                   # remark
+                        'https://www.9qihuo.com/qihuoshouxufei?zhuli=true',  # source_url
                         datetime.now().strftime('%Y-%m-%d %H:%M:%S')  # updated_at
                     ))
                     inserted_count += 1
@@ -1691,6 +1655,45 @@ class IndustryDataDB:
             conn.commit()
 
         return inserted_count
+
+    def update_turnover_amount(self, turnover_data: Dict[str, float]) -> int:
+        """
+        更新期货合约的成交额数据
+
+        Args:
+            turnover_data: 成交额字典，格式为 {contract_code: turnover_amount}
+                          例如: {"ag2606": 1234567890.0, "au2606": 9876543210.0}
+
+        Returns:
+            成功更新的记录数
+        """
+        if not turnover_data:
+            return 0
+
+        updated_count = 0
+
+        with self.get_connection() as conn:
+            for contract_code, turnover_amount in turnover_data.items():
+                try:
+                    conn.execute("""
+                        UPDATE futures_contracts
+                        SET turnover_amount = ?,
+                            updated_at = ?
+                        WHERE contract_code = ?
+                    """, (
+                        turnover_amount,
+                        datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                        contract_code
+                    ))
+                    if conn.total_changes > 0:
+                        updated_count += 1
+                except sqlite3.Error as e:
+                    print(f"更新成交额失败: {e}, 合约: {contract_code}")
+                    continue
+
+            conn.commit()
+
+        return updated_count
 
     def query_futures_contracts(self, contract_code: str = None, exchange: str = None,
                                 variety_code: str = None, is_main_contract: bool = None,
@@ -1770,93 +1773,170 @@ class IndustryDataDB:
 
     def query_active_main_contracts(self, min_amount: float = 20.0,
                                     max_margin: float = 50000.0,
-                                    max_fee: float = 30.0) -> pd.DataFrame:
+                                    max_fee: float = 30.0,
+                                    use_volume_filter: bool = False) -> pd.DataFrame:
         """
-        查询成交额大于指定值、保证金和手续费符合条件的主力合约
+        查询保证金和手续费符合条件的主力合约
 
         Args:
-            min_amount: 最小成交额（单位：亿元），默认20亿
+            min_amount: 最小成交额（单位：亿元），默认20亿（仅当use_volume_filter=True时生效）
             max_margin: 最大一手保证金（做多和做空都需要小于此值，单位：元），默认5万
             max_fee: 最大交易一手费率（开仓+平仓，单位：元），默认30元
+            use_volume_filter: 是否使用成交量/成交额筛选，默认False（因为openctp数据不包含实时成交量）
 
         Returns:
             包含合约详细信息的DataFrame
         """
         with self.get_connection() as conn:
-            # 成交额 = 成交量(手) * 合约乘数 * 最新价
-            # 1亿 = 100,000,000
-            min_amount_in_yuan = min_amount * 100000000
 
-            sql = """
-                SELECT
-                    contract_code,
-                    contract_name,
-                    variety_name,
-                    exchange,
-                    volume,
-                    contract_multiplier,
-                    latest_price,
-                    long_one_lot_margin,
-                    short_one_lot_margin,
-                    one_lot_open_fee,
-                    one_lot_close_fee,
-                    (one_lot_open_fee + one_lot_close_fee) as total_fee,
-                    (volume * contract_multiplier * latest_price) as turnover_amount,
-                    (volume * contract_multiplier * latest_price) / 100000000.0 as turnover_in_yi
-                FROM futures_contracts
-                WHERE is_main_contract = 1
-                  AND volume IS NOT NULL
-                  AND contract_multiplier IS NOT NULL
-                  AND latest_price IS NOT NULL
-                  AND latest_price > 0
-                  AND long_one_lot_margin IS NOT NULL
-                  AND long_one_lot_margin > 0
-                  AND short_one_lot_margin IS NOT NULL
-                  AND short_one_lot_margin > 0
-                  AND one_lot_open_fee IS NOT NULL
-                  AND one_lot_close_fee IS NOT NULL
-                  AND (volume * contract_multiplier * latest_price) >= ?
-                  AND long_one_lot_margin < ?
-                  AND short_one_lot_margin < ?
-                  AND (one_lot_open_fee + one_lot_close_fee) < ?
-                ORDER BY turnover_amount DESC
-            """
+            if use_volume_filter:
+                # 使用成交额筛选（适用于有实时成交量的数据源）
+                min_amount_in_yuan = min_amount * 100000000
+                sql = """
+                    SELECT
+                        contract_code,
+                        contract_code as contract_name,
+                        variety_name_cn as variety_name,
+                        exchange,
+                        current_price as latest_price,
+                        margin_per_lot as long_one_lot_margin,
+                        margin_per_lot as short_one_lot_margin,
+                        open_fee_per_lot as one_lot_open_fee,
+                        close_yesterday_fee_per_lot as one_lot_close_fee,
+                        (open_fee_per_lot + close_yesterday_fee_per_lot) as total_fee,
+                        turnover_amount,
+                        turnover_amount / 100000000.0 as turnover_in_yi
+                    FROM futures_contracts
+                    WHERE is_main_contract = 1
+                      AND current_price IS NOT NULL
+                      AND current_price > 0
+                      AND margin_per_lot IS NOT NULL
+                      AND margin_per_lot > 0
+                      AND open_fee_per_lot IS NOT NULL
+                      AND close_yesterday_fee_per_lot IS NOT NULL
+                      AND turnover_amount IS NOT NULL
+                      AND turnover_amount >= ?
+                      AND margin_per_lot < ?
+                      AND (open_fee_per_lot + close_yesterday_fee_per_lot) < ?
+                    ORDER BY turnover_amount DESC
+                """
+                params = [min_amount_in_yuan, max_margin, max_fee]
+            else:
+                # 不使用成交额筛选，使用成交额排序（适用于有成交额数据的情况）
+                sql = """
+                    SELECT
+                        contract_code,
+                        contract_code as contract_name,
+                        variety_name_cn as variety_name,
+                        exchange,
+                        current_price as latest_price,
+                        margin_per_lot as long_one_lot_margin,
+                        margin_per_lot as short_one_lot_margin,
+                        open_fee_per_lot as one_lot_open_fee,
+                        close_yesterday_fee_per_lot as one_lot_close_fee,
+                        (open_fee_per_lot + close_yesterday_fee_per_lot) as total_fee,
+                        turnover_amount,
+                        turnover_amount / 100000000.0 as turnover_in_yi
+                    FROM futures_contracts
+                    WHERE is_main_contract = 1
+                      AND current_price IS NOT NULL
+                      AND margin_per_lot IS NOT NULL
+                      AND margin_per_lot > 0
+                      AND open_fee_per_lot IS NOT NULL
+                      AND close_yesterday_fee_per_lot IS NOT NULL
+                      AND margin_per_lot < ?
+                      AND (open_fee_per_lot + close_yesterday_fee_per_lot) < ?
+                    ORDER BY turnover_amount DESC
+                """
+                params = [max_margin, max_fee]
 
             try:
-                df = pd.read_sql_query(sql, conn, params=[min_amount_in_yuan, max_margin, max_margin, max_fee])
+                df = pd.read_sql_query(sql, conn, params=params)
                 return df
             except sqlite3.Error as e:
                 print(f"查询活跃主力合约失败: {e}")
+                import traceback
+                traceback.print_exc()
                 return pd.DataFrame()
 
     def get_active_main_contracts_simple(self, min_amount: float = 20.0,
                                         max_margin: float = 50000.0,
-                                        max_fee: float = 30.0) -> List[Dict]:
+                                        max_fee: float = 30.0,
+                                        use_volume_filter: bool = False) -> List[Dict]:
         """
         查询符合条件的主力合约（简化版本）
 
+        根据九期网数据和东方财富成交额数据，查询保证金和手续费符合条件的主力合约
+
         Args:
-            min_amount: 最小成交额（单位：亿元），默认20亿
+            min_amount: 最小成交额（单位：亿元），默认20亿（仅当use_volume_filter=True时生效）
             max_margin: 最大一手保证金（做多和做空都需要小于此值，单位：元），默认5万
             max_fee: 最大交易一手费率（开仓+平仓，单位：元），默认30元
+            use_volume_filter: 是否使用成交额筛选，默认False
 
         Returns:
             包含合约代码和名称的字典列表
-            格式: [{"contract_code": "cu2505", "contract_name": "cu2505"}, ...]
+            格式: [{"contract_code": "ag2606", "contract_name": "ag2606"}, ...]
         """
-        df = self.query_active_main_contracts(min_amount, max_margin, max_fee)
+        with self.get_connection() as conn:
+            try:
+                # 构建SQL查询
+                if use_volume_filter:
+                    # 使用成交额筛选
+                    min_amount_in_yuan = min_amount * 100000000
+                    sql = """
+                        SELECT contract_code
+                        FROM futures_contracts
+                        WHERE is_main_contract = 1
+                          AND margin_per_lot IS NOT NULL
+                          AND margin_per_lot > 0
+                          AND margin_per_lot < ?
+                          AND open_fee_per_lot IS NOT NULL
+                          AND close_yesterday_fee_per_lot IS NOT NULL
+                          AND (open_fee_per_lot + close_yesterday_fee_per_lot) < ?
+                          AND turnover_amount IS NOT NULL
+                          AND turnover_amount >= ?
+                        ORDER BY turnover_amount DESC
+                    """
+                    params = [max_margin, max_fee, min_amount_in_yuan]
+                else:
+                    # 不使用成交额筛选，按成交额排序
+                    sql = """
+                        SELECT contract_code
+                        FROM futures_contracts
+                        WHERE is_main_contract = 1
+                          AND margin_per_lot IS NOT NULL
+                          AND margin_per_lot > 0
+                          AND margin_per_lot < ?
+                          AND open_fee_per_lot IS NOT NULL
+                          AND close_yesterday_fee_per_lot IS NOT NULL
+                          AND (open_fee_per_lot + close_yesterday_fee_per_lot) < ?
+                        ORDER BY turnover_amount DESC
+                    """
+                    params = [max_margin, max_fee]
 
-        if df.empty:
-            return []
+                cursor = conn.execute(sql, params)
+                rows = cursor.fetchall()
 
-        result = []
-        for _, row in df.iterrows():
-            result.append({
-                "contract_code": row['contract_code'],
-                "contract_name": row['contract_name']
-            })
+                if not rows:
+                    return []
 
-        return result
+                # 构建结果列表
+                result = []
+                for row in rows:
+                    contract_code = row['contract_code']
+                    result.append({
+                        "contract_code": contract_code,
+                        "contract_name": contract_code  # 在新表结构中，合约代码本身就是名称
+                    })
+
+                return result
+
+            except sqlite3.Error as e:
+                print(f"查询活跃主力合约失败: {e}")
+                import traceback
+                traceback.print_exc()
+                return []
 
     def _safe_float(self, value):
         """安全转换为浮点数"""
@@ -1875,3 +1955,245 @@ class IndustryDataDB:
             return int(value)
         except (ValueError, TypeError):
             return None
+
+    def drop_table_futures_contracts(self) -> bool:
+        """
+        删除futures_contracts表（包括表结构和数据）
+
+        Returns:
+            是否删除成功
+        """
+        try:
+            with self.get_connection() as conn:
+                # 删除表
+                conn.execute("DROP TABLE IF EXISTS futures_contracts")
+
+                # 删除相关索引（索引会随表一起删除，但为了保险起见）
+                conn.execute("DROP INDEX IF EXISTS idx_futures_exchange")
+                conn.execute("DROP INDEX IF EXISTS idx_futures_variety_code")
+                conn.execute("DROP INDEX IF EXISTS idx_futures_is_main")
+                conn.execute("DROP INDEX IF EXISTS idx_futures_variety_name")
+
+                conn.commit()
+                print("成功删除futures_contracts表及其索引")
+                return True
+
+        except sqlite3.Error as e:
+            print(f"删除futures_contracts表失败: {e}")
+            return False
+
+    def clear_table_futures_contracts(self) -> int:
+        """
+        清空futures_contracts表中的所有数据（保留表结构）
+
+        Returns:
+            成功删除的记录数
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.execute("DELETE FROM futures_contracts")
+                deleted_count = cursor.rowcount
+                conn.commit()
+
+                print(f"成功清空futures_contracts表，共删除 {deleted_count} 条记录")
+                return deleted_count
+
+        except sqlite3.Error as e:
+            print(f"清空futures_contracts表失败: {e}")
+            return 0
+
+    def _get_futures_5m_table_name(self, year_month: str) -> str:
+        """
+        生成期货5分钟数据表名
+
+        Args:
+            year_month: 年月 (格式: YYYY-MM)
+
+        Returns:
+            表名
+        """
+        return f"futures_5m_{year_month.replace('-', '_')}"
+
+    def _create_futures_5m_table(self, table_name: str, year_month: str):
+        """
+        创建期货5分钟数据表
+
+        Args:
+            table_name: 表名
+            year_month: 年月
+        """
+        with self.get_connection() as conn:
+            # 创建期货5分钟数据表
+            conn.execute(f"""
+                CREATE TABLE IF NOT EXISTS {table_name} (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    contract_code TEXT NOT NULL,
+                    variety_name TEXT NOT NULL,
+                    datetime TEXT NOT NULL,
+                    open_price REAL NOT NULL,
+                    high_price REAL NOT NULL,
+                    low_price REAL NOT NULL,
+                    close_price REAL NOT NULL,
+                    volume INTEGER DEFAULT 0,
+                    amount REAL DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(contract_code, datetime)
+                )
+            """)
+            # 创建索引
+            conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_contract_code ON {table_name}(contract_code)")
+            conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_datetime ON {table_name}(datetime)")
+            conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_code_datetime ON {table_name}(contract_code, datetime)")
+            # 记录表信息
+            conn.execute("""
+                INSERT OR REPLACE INTO table_info (table_name, period, year_month)
+                VALUES (?, ?, ?)
+            """, (table_name, 'futures_5m', year_month))
+            conn.commit()
+
+    def ensure_futures_5m_table_exists(self, datetime_str: str) -> str:
+        """
+        确保指定时间的期货5分钟数据表存在
+
+        Args:
+            datetime_str: 时间字符串 (格式: YYYY-MM-DD HH:MM:SS)
+
+        Returns:
+            表名
+        """
+        # 提取年月
+        dt = datetime.strptime(datetime_str.split()[0], '%Y-%m-%d')
+        year_month = dt.strftime('%Y-%m')
+
+        table_name = self._get_futures_5m_table_name(year_month)
+
+        # 检查表是否存在
+        with self.get_connection() as conn:
+            cursor = conn.execute("""
+                SELECT name FROM sqlite_master
+                WHERE type='table' AND name=?
+            """, (table_name,))
+
+            if not cursor.fetchone():
+                self._create_futures_5m_table(table_name, year_month)
+        return table_name
+
+    def insert_futures_5m_data(self, data: List[Dict]) -> int:
+        """
+        插入期货5分钟数据（包含去重逻辑）
+
+        Args:
+            data: 数据列表，每个元素包含: contract_code, variety_name, datetime, open, high, low, close, volume, amount
+
+        Returns:
+            成功插入的记录数
+        """
+        if not data:
+            return 0
+
+        inserted_count = 0
+
+        # 按年月分组数据
+        monthly_data = {}
+        for record in data:
+            dt = record['datetime']
+            year_month = datetime.strptime(dt.split()[0], '%Y-%m-%d').strftime('%Y-%m')
+            if year_month not in monthly_data:
+                monthly_data[year_month] = []
+            monthly_data[year_month].append(record)
+
+        # 按月插入数据
+        for year_month, records in monthly_data.items():
+            table_name = self._get_futures_5m_table_name(year_month)
+            self.ensure_futures_5m_table_exists(records[0]['datetime'])
+            with self.get_connection() as conn:
+                for record in records:
+                    try:
+                        conn.execute(f"""
+                            INSERT OR REPLACE INTO {table_name}
+                            (contract_code, variety_name, datetime, open_price, high_price, low_price, close_price, volume, amount)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            record['contract_code'],
+                            record['variety_name'],
+                            record['datetime'],
+                            record['open'],
+                            record['high'],
+                            record['low'],
+                            record['close'],
+                            record.get('volume', 0),
+                            record.get('amount', 0)
+                        ))
+                        inserted_count += 1
+                    except sqlite3.Error as e:
+                        print(f"插入期货5分钟数据失败: {e}, 记录: {record}")
+                        continue
+
+                conn.commit()
+        return inserted_count
+
+    def query_futures_5m_data(self, contract_code: str = None, start_date: str = None,
+                             end_date: str = None, limit: int = None) -> pd.DataFrame:
+        """
+        查询期货5分钟数据
+
+        Args:
+            contract_code: 合约代码，为None时查询所有
+            start_date: 开始日期 (格式: YYYY-MM-DD)
+            end_date: 结束日期 (格式: YYYY-MM-DD)
+            limit: 限制返回记录数
+
+        Returns:
+            包含期货5分钟数据的DataFrame
+        """
+        # 确定需要查询的表
+        tables_to_query = self._get_tables_for_date_range('futures_5m', start_date, end_date)
+
+        if not tables_to_query:
+            return pd.DataFrame()
+
+        all_data = []
+
+        with self.get_connection() as conn:
+            for table_name in tables_to_query:
+                # 构建查询SQL
+                sql = f"SELECT * FROM {table_name} WHERE 1=1"
+                params = []
+
+                if contract_code:
+                    sql += " AND contract_code = ?"
+                    params.append(contract_code)
+
+                if start_date:
+                    sql += " AND datetime >= ?"
+                    params.append(f"{start_date} 00:00:00")
+
+                if end_date:
+                    sql += " AND datetime <= ?"
+                    params.append(f"{end_date} 23:59:59")
+
+                sql += " ORDER BY datetime"
+
+                if limit and len(tables_to_query) == 1:  # 只有一个表时才应用limit
+                    sql += f" LIMIT {limit}"
+
+                try:
+                    df = pd.read_sql_query(sql, conn, params=params)
+                    if not df.empty:
+                        all_data.append(df)
+                except sqlite3.Error as e:
+                    print(f"查询表 {table_name} 失败: {e}")
+                    continue
+
+        if not all_data:
+            return pd.DataFrame()
+
+        # 合并所有数据
+        result_df = pd.concat(all_data, ignore_index=True)
+        result_df = result_df.sort_values('datetime').reset_index(drop=True)
+
+        # 应用limit（如果有多个表）
+        if limit and len(result_df) > limit:
+            result_df = result_df.tail(limit)
+
+        return result_df

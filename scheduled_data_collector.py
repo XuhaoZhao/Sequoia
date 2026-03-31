@@ -251,12 +251,12 @@ def  setup_scheduled_jobs(test_mode=False):
     Returns:
         BackgroundScheduler: 调度器实例
     """
-    logger.info("设置定时任务: 每天15:05执行数据收集")
+    logger.info("设置定时任务: 每天20:10执行数据收集")
 
     # 创建调度器
     scheduler = BackgroundScheduler()
 
-    # 添加定时任务：每天15:05执行数据收集
+    # 添加定时任务：每天20:10执行数据收集
     scheduler.add_job(
         func=scheduled_daliy_data_collection,
         trigger=CronTrigger(hour=20, minute=10),

@@ -47,16 +47,18 @@ class SinaFuturesInterceptor:
     """
     使用 Playwright 拦截新浪财经期货实时数据
     """
-    def __init__(self, headless=False, custom_symbols=None, continuous=True):
+    def __init__(self, headless=False, custom_symbols=None, symbol_name_map=None, continuous=True):
         """
         初始化拦截器
         :param headless: 是否无头模式（True不显示浏览器，False显示浏览器）
         :param custom_symbols: 自定义期货代码列表，例如 ['nf_V2605', 'nf_LC2703']
+        :param symbol_name_map: 合约代码到品种名称的映射，例如 {'nf_V2605': '聚氯乙烯'}
         :param continuous: 是否持续监听（True=一直监听直到手动停止，False=指定时间后停止）
         """
         self.headless = headless
         self.continuous = continuous  # 持续监听模式
         self.custom_symbols = custom_symbols or ['nf_V2605']  # 默认获取V2605
+        self.symbol_name_map = symbol_name_map or {}  # 合约名称映射
 
         # 目标页面URL
         self.target_url = "https://finance.sina.com.cn/futures/quotes/V2605.shtml"
@@ -77,12 +79,110 @@ class SinaFuturesInterceptor:
         # CSV文件路径
         self.csv_file = None
 
+        # 跟踪成功获取的合约（用于最后统计缺失合约）
+        self.captured_symbols = set()
+
+        # 合约代码修正映射（记录旧代码到新代码的转换）
+        self.contract_code_corrections = {}
+
         print(f"初始化新浪财经期货数据拦截器")
         print(f"目标页面: {self.target_url}")
         print(f"自定义期货代码数量: {len(self.custom_symbols)}")
         print(f"合约列表: {', '.join(self.custom_symbols[:10])}{'...' if len(self.custom_symbols) > 10 else ''}")
         print(f"无头模式: {headless}")
         print(f"监听模式: {'持续监听（按Ctrl+C停止）' if continuous else '定时监听'}")
+
+        # 首次运行时，修正所有合约代码格式
+        self._fix_all_contract_codes()
+
+    def _fix_all_contract_codes(self):
+        """
+        首次运行时，一次性修正所有合约代码格式
+        新浪财经格式：3位数字需要补全为4位（如 AP605 -> AP2605）
+        """
+        import copy
+
+        corrected_symbols = []
+        corrections_map = {}  # 记录修正映射
+
+        for symbol in self.custom_symbols:
+            # 移除 nf_ 前缀
+            code = symbol.replace('nf_', '')
+
+            # 检查数字部分是否已经是4位
+            digits_match = re.search(r'(\d+)$', code)
+            if not digits_match:
+                corrected_symbols.append(symbol)
+                continue
+
+            digits = digits_match.group(1)
+
+            # 如果已经是4位数字，不需要修正
+            if len(digits) == 4:
+                corrected_symbols.append(symbol)
+                continue
+
+            # 如果是3位数字，需要补全为4位
+            if len(digits) == 3:
+                # 提取品种代码和3位数字
+                match = re.match(r'^([A-Za-z]+)(\d{3})$', code)
+                if not match:
+                    corrected_symbols.append(symbol)
+                    continue
+
+                variety = match.group(1)  # 品种代码，如 AP
+                month_3digit = match.group(2)  # 3位数字，如 605
+
+                # 根据当前年份判断完整年份
+                first_digit = int(month_3digit[0])  # 第一位，如 6
+                current_year_last_digit = datetime.now().year % 10  # 当前年份最后一位
+                current_decade = datetime.now().year // 10 * 10  # 当前年代
+
+                # 判断合约年份
+                if first_digit > current_year_last_digit:
+                    contract_year = current_decade + first_digit
+                elif first_digit < current_year_last_digit - 2:
+                    contract_year = current_decade + 10 + first_digit
+                else:
+                    contract_year = current_decade + first_digit
+
+                # 补全为4位数字：年份后2位 + 月份后2位
+                year_2digit = str(contract_year)[2:]  # 如 "26"
+                month_2digit = month_3digit[1:]  # 如 "05"
+                month_4digit = f"{year_2digit}{month_2digit}"  # "2605"
+
+                # 构造新的合约代码
+                new_code = f"{variety}{month_4digit}"
+                new_symbol = f"nf_{new_code}"
+
+                # 记录修正
+                corrected_symbols.append(new_symbol)
+                corrections_map[symbol] = new_symbol
+
+                # 同时更新 symbol_name_map
+                if symbol in self.symbol_name_map:
+                    self.symbol_name_map[new_symbol] = self.symbol_name_map[symbol]
+                    del self.symbol_name_map[symbol]
+            else:
+                corrected_symbols.append(symbol)
+
+        # 如果有修正，更新custom_symbols并显示
+        if corrections_map:
+            print(f"\n🔧 合约代码自动修正:")
+            print(f"  修正数量: {len(corrections_map)} 个")
+            print(f"  修正列表:")
+            for old_code, new_code in corrections_map.items():
+                print(f"    {old_code} -> {new_code}")
+            print()
+
+            # 更新 custom_symbols
+            self.custom_symbols = corrected_symbols
+
+            # 保存修正记录（用于最终统计）
+            self.contract_code_corrections = corrections_map
+        else:
+            self.contract_code_corrections = {}
+            print("✓ 所有合约代码格式正确，无需修正\n")
 
     async def intercept_futures_data(self):
         """
@@ -172,12 +272,21 @@ class SinaFuturesInterceptor:
                                             # 实时追加到CSV
                                             self._append_to_csv(parsed_data)
 
+                                            # 检查缺失的合约
+                                            missing_symbols = self._check_missing_symbols()
+
                                             # 显示统计信息（每10次显示一次详情）
                                             if self.intercept_count % 10 == 1:
                                                 print(f"\n✓ 第 {self.intercept_count} 次拦截 - {len(parsed_data)} 条数据")
                                                 self._print_futures_data(parsed_data)
+                                                # 打印缺失合约
+                                                if missing_symbols:
+                                                    self._print_missing_symbols(missing_symbols)
                                             else:
                                                 print(f"✓ 第 {self.intercept_count} 次拦截 - {len(parsed_data)} 条数据", end='\r')
+                                                # 每次都打印缺失的合约（简洁版）
+                                                if missing_symbols:
+                                                    print(f"  | 缺失: {len(missing_symbols)}个", end='\r')
 
                                 except Exception as e:
                                     print(f"\n✗ 响应处理失败: {e}")
@@ -225,6 +334,28 @@ class SinaFuturesInterceptor:
             print(f"  运行时长: {elapsed:.0f}秒 ({elapsed/60:.1f}分钟)")
             print(f"  平均频率: {self.intercept_count/elapsed:.2f}次/秒" if elapsed > 0 else "")
             print(f"  数据文件: {self.csv_file}")
+
+            # 显示合约代码修正统计
+            if self.contract_code_corrections:
+                print(f"\n🔧 合约代码修正统计:")
+                print(f"  修正数量: {len(self.contract_code_corrections)} 个")
+                print(f"  修正列表:")
+                for old_code, new_code in self.contract_code_corrections.items():
+                    print(f"    {old_code} -> {new_code}")
+
+            # 统计合约获取情况
+            print(f"\n📋 合约获取统计:")
+            print(f"  期望获取: {len(self.custom_symbols)} 个合约")
+            print(f"  成功获取: {len(self.captured_symbols)} 个合约")
+
+            # 计算缺失的合约
+            missing_symbols = set(self.custom_symbols) - self.captured_symbols
+            if missing_symbols:
+                print(f"  ❌ 缺失合约: {len(missing_symbols)} 个")
+                print(f"     缺失列表: {', '.join(sorted(missing_symbols))}")
+            else:
+                print(f"  ✓ 全部获取成功！")
+
             print("=" * 80)
 
             return self.captured_data
@@ -249,6 +380,10 @@ class SinaFuturesInterceptor:
 
                 if len(fields) < 5:
                     continue
+
+                # 记录成功获取的合约代码
+                # 注意：代码已经在初始化时修正过了，这里直接使用
+                self.captured_symbols.add(symbol)
 
                 # 构造数据字典
                 data = {
@@ -322,6 +457,38 @@ class SinaFuturesInterceptor:
 
         return filename
 
+    def _check_missing_symbols(self):
+        """
+        检查缺失的合约
+        :return: 缺失的合约符号列表
+        """
+        if not self.custom_symbols:
+            return []
+
+        missing = set(self.custom_symbols) - self.captured_symbols
+        return sorted(list(missing))
+
+    def _print_missing_symbols(self, missing_symbols):
+        """
+        打印缺失的合约信息
+        :param missing_symbols: 缺失的合约符号列表
+        """
+        if not missing_symbols:
+            return
+
+        print(f"\n{'─' * 80}")
+        print(f"⚠ 缺失合约 ({len(missing_symbols)}个):")
+
+        # 打印缺失的合约，格式：代码 - 名称
+        for symbol in missing_symbols[:20]:  # 最多显示20个
+            name = self.symbol_name_map.get(symbol, '未知')
+            print(f"  • {symbol} - {name}")
+
+        if len(missing_symbols) > 20:
+            print(f"  ... 还有 {len(missing_symbols) - 20} 个合约未显示")
+
+        print(f"{'─' * 80}")
+
     def _append_to_csv(self, data_list):
         """
         追加数据到CSV文件
@@ -339,6 +506,7 @@ class SinaFuturesInterceptor:
                     row = data.copy()
                     row['序号'] = self.intercept_count
                     writer.writerow(row)
+                    
 
         except Exception as e:
             print(f"\n✗ 追加CSV失败: {e}")
@@ -388,13 +556,19 @@ def main():
     print("新浪财经期货实时数据拦截器 - 持续监听模式")
     print("=" * 80)
 
-    # 从数据库自动加载成交额>20亿的主力合约
+    # 从数据库自动加载主力合约（成交额>=20亿，保证金<5万，手续费<30元）
     print("\n正在从数据库加载活跃主力合约...")
+    print("筛选条件: 成交额>=20亿, 保证金<5万, 手续费<30元")
     db = IndustryDataDB()
 
     try:
-        # 获取成交额>20亿的主力合约
-        contracts = db.get_active_main_contracts_simple(min_amount=20.0)
+        # 获取主力合约（成交额>=20亿，保证金<5万，手续费<30元）
+        contracts = db.get_active_main_contracts_simple(
+            min_amount=20.0,          # 成交额>=20亿
+            max_margin=50000.0,       # 保证金<5万
+            max_fee=30.0,             # 手续费<30元
+            use_volume_filter=True    # 启用成交额筛选
+        )
 
         if not contracts:
             print("⚠ 警告: 数据库中没有找到符合条件的主力合约")
@@ -407,9 +581,28 @@ def main():
                 'nf_MA2605',  # 甲醇
                 'nf_AG2606',  # 白银
             ]
+            # 创建默认的合约名称映射
+            symbol_name_map = {
+                'nf_V2605': '聚氯乙烯',
+                'nf_LC2703': '碳酸锂',
+                'nf_TA2605': 'PTA',
+                'nf_MA2605': '甲醇',
+                'nf_AG2606': '白银'
+            }
         else:
             # 转换为新浪财经格式：添加 'nf_' 前缀，并统一转为大写
             custom_symbols = [f"nf_{contract['contract_code'].upper()}" for contract in contracts]
+
+            # 创建合约代码到品种名称的映射
+            # 需要从数据库重新查询以获取详细信息
+            df = db.query_futures_contracts(is_main_contract=True)
+            symbol_name_map = {}
+            for _, row in df.iterrows():
+                code_upper = row['contract_code'].upper()
+                symbol = f"nf_{code_upper}"
+                if symbol in custom_symbols:
+                    symbol_name_map[symbol] = row['variety_name_cn']
+
             print(f"✓ 成功加载 {len(custom_symbols)} 个活跃主力合约")
             print(f"合约列表: {', '.join(custom_symbols[:10])}{'...' if len(custom_symbols) > 10 else ''}")
 
@@ -423,6 +616,13 @@ def main():
             'nf_MA2605',  # 甲醇
             'nf_AG2606',  # 白银
         ]
+        symbol_name_map = {
+            'nf_V2605': '聚氯乙烯',
+            'nf_LC2703': '碳酸锂',
+            'nf_TA2605': 'PTA',
+            'nf_MA2605': '甲醇',
+            'nf_AG2606': '白银'
+        }
 
     print(f"\n配置的期货代码数量: {len(custom_symbols)}")
     print(f"将持续监听并记录所有实时数据，不丢失任何更新")
@@ -431,6 +631,7 @@ def main():
     interceptor = SinaFuturesInterceptor(
         headless=False,           # 显示浏览器窗口，便于观察
         custom_symbols=custom_symbols,
+        symbol_name_map=symbol_name_map,  # 传递合约名称映射
         continuous=True           # 持续监听模式
     )
 
