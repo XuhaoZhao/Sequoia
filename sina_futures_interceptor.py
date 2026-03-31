@@ -71,12 +71,16 @@ class SinaFuturesInterceptor:
         self.intercept_count = 0
         self.start_time = None
 
+        # 请求拦截计数（用于日志）
+        self.request_intercept_count = 0
+
         # CSV文件路径
         self.csv_file = None
 
         print(f"初始化新浪财经期货数据拦截器")
         print(f"目标页面: {self.target_url}")
-        print(f"自定义期货代码: {', '.join(self.custom_symbols)}")
+        print(f"自定义期货代码数量: {len(self.custom_symbols)}")
+        print(f"合约列表: {', '.join(self.custom_symbols[:10])}{'...' if len(self.custom_symbols) > 10 else ''}")
         print(f"无头模式: {headless}")
         print(f"监听模式: {'持续监听（按Ctrl+C停止）' if continuous else '定时监听'}")
 
@@ -96,6 +100,9 @@ class SinaFuturesInterceptor:
             print("\n" + "=" * 80)
             print("开始监听期货数据API...")
             print("=" * 80)
+            print(f"\n准备拦截所有包含 V2605 的API请求")
+            print(f"将替换为指定的 {len(self.custom_symbols)} 个合约")
+            print()
 
             # 请求拦截器 - 修改请求参数
             async def handle_route(route, request):
@@ -104,31 +111,33 @@ class SinaFuturesInterceptor:
                 # 只拦截特定模式：
                 # 1. 带时间戳参数 ?_=时间戳/
                 # 2. 带list参数 /&list=...
-                # 3. list中包含V2605
-                # 4. list中有多个变量（包含逗号）
+                # 3. list中包含V2605且有多个变量（包含逗号）
                 if '?_=' in url and '/&list=' in url:
                     # 提取list参数值进行精确匹配
                     list_start = url.find('list=')
                     if list_start != -1:
                         list_part = url[list_start + 5:].split('&')[0]  # 获取list参数值
 
-                        # 检查条件：
-                        # 1. list中包含V2605
-                        # 2. list中有多个变量（包含逗号）
+                        # 检查条件：list中包含V2605且有多个变量
                         if 'V2605' in list_part and ',' in list_part:
-                            # 解析并替换list参数
-                            if self.custom_symbols:
-                                # 构造新的URL
-                                base_url = url.split('?')[0]
-                                timestamp = str(int(datetime.now().timestamp() * 1000))
+                            self.request_intercept_count += 1
 
-                                # 构造新的list参数
-                                new_list = ','.join(self.custom_symbols)
-                                new_url = f"{base_url}?_={timestamp}/&list={new_list}"
+                            # 构造新的URL
+                            base_url = url.split('?')[0]
+                            timestamp = str(int(datetime.now().timestamp() * 1000))
 
-                                # 继续修改后的请求
-                                await route.continue_(url=new_url)
-                                return
+                            # 构造新的list参数
+                            new_list = ','.join(self.custom_symbols)
+                            new_url = f"{base_url}?_={timestamp}/&list={new_list}"
+
+                            # 第一次或每10次打印详细信息
+                            if self.request_intercept_count == 1 or self.request_intercept_count % 10 == 0:
+                                print(f"\n[请求拦截 #{self.request_intercept_count}] 替换为 {len(self.custom_symbols)} 个合约")
+                                print(f"  原URL包含: {list_part[:50]}...")
+
+                            # 继续修改后的请求
+                            await route.continue_(url=new_url)
+                            return
 
                 # 其他请求正常处理
                 await route.continue_()
@@ -139,40 +148,39 @@ class SinaFuturesInterceptor:
                 # 只处理特定模式：
                 # 1. 带时间戳参数 ?_=时间戳/
                 # 2. 带list参数 /&list=...
-                # 3. list中包含V2605
-                # 4. list中有多个变量（包含逗号）
+                # 3. list中包含V2605且有多个变量
                 if '?_=' in url and '/&list=' in url:
                     # 提取list参数值进行精确匹配
                     list_start = url.find('list=')
                     if list_start != -1:
                         list_part = url[list_start + 5:].split('&')[0]  # 获取list参数值
 
-                        # 检查条件：
-                        # 1. list中包含V2605
-                        # 2. list中有多个变量（包含逗号）
+                        # 检查条件：list中包含V2605且有多个变量
+                        # 并且是我们修改后的请求（包含我们的合约）
                         if 'V2605' in list_part and ',' in list_part:
-                            try:
-                                # 获取响应内容
-                                text = await response.text()
+                            if any(symbol in list_part for symbol in self.custom_symbols):
+                                try:
+                                    # 获取响应内容
+                                    text = await response.text()
 
-                                if text and len(text) > 0:
-                                    self.intercept_count += 1
+                                    if text and len(text) > 0:
+                                        self.intercept_count += 1
 
-                                    # 解析数据
-                                    parsed_data = self._parse_sina_response(text)
-                                    if parsed_data:
-                                        # 实时追加到CSV
-                                        self._append_to_csv(parsed_data)
+                                        # 解析数据
+                                        parsed_data = self._parse_sina_response(text)
+                                        if parsed_data:
+                                            # 实时追加到CSV
+                                            self._append_to_csv(parsed_data)
 
-                                        # 显示统计信息（每10次显示一次详情）
-                                        if self.intercept_count % 10 == 1:
-                                            print(f"\n✓ 第 {self.intercept_count} 次拦截 - {len(parsed_data)} 条数据")
-                                            self._print_futures_data(parsed_data)
-                                        else:
-                                            print(f"✓ 第 {self.intercept_count} 次拦截 - {len(parsed_data)} 条数据", end='\r')
+                                            # 显示统计信息（每10次显示一次详情）
+                                            if self.intercept_count % 10 == 1:
+                                                print(f"\n✓ 第 {self.intercept_count} 次拦截 - {len(parsed_data)} 条数据")
+                                                self._print_futures_data(parsed_data)
+                                            else:
+                                                print(f"✓ 第 {self.intercept_count} 次拦截 - {len(parsed_data)} 条数据", end='\r')
 
-                            except Exception as e:
-                                print(f"\n✗ 响应处理失败: {e}")
+                                except Exception as e:
+                                    print(f"\n✗ 响应处理失败: {e}")
 
             # 设置路由拦截
             await page.route('**/*', handle_route)
@@ -400,8 +408,8 @@ def main():
                 'nf_AG2606',  # 白银
             ]
         else:
-            # 转换为新浪财经格式：添加 'nf_' 前缀
-            custom_symbols = [f"nf_{contract['contract_code']}" for contract in contracts]
+            # 转换为新浪财经格式：添加 'nf_' 前缀，并统一转为大写
+            custom_symbols = [f"nf_{contract['contract_code'].upper()}" for contract in contracts]
             print(f"✓ 成功加载 {len(custom_symbols)} 个活跃主力合约")
             print(f"合约列表: {', '.join(custom_symbols[:10])}{'...' if len(custom_symbols) > 10 else ''}")
 

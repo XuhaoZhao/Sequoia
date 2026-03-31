@@ -1815,7 +1815,7 @@ class IndustryDataDB:
                   AND short_one_lot_margin > 0
                   AND one_lot_open_fee IS NOT NULL
                   AND one_lot_close_fee IS NOT NULL
-                HAVING (volume * contract_multiplier * latest_price) >= ?
+                  AND (volume * contract_multiplier * latest_price) >= ?
                   AND long_one_lot_margin < ?
                   AND short_one_lot_margin < ?
                   AND (one_lot_open_fee + one_lot_close_fee) < ?
