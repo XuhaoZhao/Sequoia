@@ -233,7 +233,7 @@ def scheduled_daliy_data_collection():
     time.sleep(50)
     logger.info("开始获取etf 日K数据")
     unifiedDataCollector = UnifiedDataCollector()
-    # unifiedDataCollector.collect_daily_data_from_excel(instrument_type='etf', delay_seconds=30)
+    unifiedDataCollector.collect_daily_data_from_excel(instrument_type='etf', delay_seconds=30)
     logger.info("结束获取etf 日K数据")
     time.sleep(5)
     logger.info("开始获取stock 日K数据")
@@ -259,7 +259,7 @@ def  setup_scheduled_jobs(test_mode=False):
     # 添加定时任务：每天15:05执行数据收集
     scheduler.add_job(
         func=scheduled_daliy_data_collection,
-        trigger=CronTrigger(hour=21, minute=10),
+        trigger=CronTrigger(hour=17, minute=59),
         id='daily_data_collection',
         name='每日数据收集任务',
         misfire_grace_time=60, # 允许延迟 60 秒内仍然执行
