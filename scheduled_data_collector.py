@@ -259,7 +259,7 @@ def  setup_scheduled_jobs(test_mode=False):
     # 添加定时任务：每天15:05执行数据收集
     scheduler.add_job(
         func=scheduled_daliy_data_collection,
-        trigger=CronTrigger(hour=17, minute=59),
+        trigger=CronTrigger(hour=20, minute=10),
         id='daily_data_collection',
         name='每日数据收集任务',
         misfire_grace_time=60, # 允许延迟 60 秒内仍然执行

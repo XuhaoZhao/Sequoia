@@ -103,6 +103,58 @@ class IndustryDataDB:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_macd_signal_type ON macd_data(signal_type)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_macd_notification_sent ON macd_data(notification_sent)")
 
+            # 创建期货合约基础数据表
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS futures_contracts (
+                    contract_code TEXT PRIMARY KEY,              -- 合约代码（唯一标识）
+                    exchange TEXT NOT NULL,                       -- 交易所
+                    contract_name TEXT,                          -- 合约名称
+                    variety_code TEXT,                            -- 品种代码
+                    variety_name TEXT,                            -- 品种名称
+                    contract_multiplier REAL,                    -- 合约乘数
+                    min_tick REAL,                               -- 最小跳动
+                    open_fee_rate REAL,                          -- 开仓费率
+                    open_fee_per_lot REAL,                       -- 开仓费用/手
+                    close_fee_rate REAL,                         -- 平仓费率
+                    close_fee_per_lot REAL,                      -- 平仓费用/手
+                    close_today_fee_rate REAL,                   -- 平今费率
+                    close_today_fee_per_lot REAL,                -- 平今费用/手
+                    long_margin_rate REAL,                       -- 做多保证金率
+                    long_margin_per_lot REAL,                    -- 做多保证金/手
+                    short_margin_rate REAL,                      -- 做空保证金率
+                    short_margin_per_lot REAL,                   -- 做空保证金/手
+                    prev_settlement_price REAL,                  -- 上日结算价
+                    prev_close_price REAL,                       -- 上日收盘价
+                    latest_price REAL,                           -- 最新价
+                    volume INTEGER,                              -- 成交量
+                    open_interest INTEGER,                       -- 持仓量
+                    one_lot_open_fee REAL,                       -- 1手开仓费用
+                    one_lot_close_fee REAL,                      -- 1手平仓费用
+                    one_lot_close_today_fee REAL,                -- 1手平今费用
+                    long_one_lot_margin REAL,                    -- 做多1手保证金
+                    short_one_lot_margin REAL,                   -- 做空1手保证金
+                    one_lot_market_value REAL,                   -- 1手市值
+                    one_tick_close_pnl REAL,                     -- 1Tick平仓盈亏
+                    one_tick_close_net_profit REAL,              -- 1Tick平仓净利
+                    two_tick_close_net_profit REAL,              -- 2Tick平仓净利
+                    one_tick_close_return_rate REAL,             -- 1Tick平仓收益率%
+                    two_tick_close_return_rate REAL,             -- 2Tick平仓收益率%
+                    one_tick_close_today_net_profit REAL,        -- 1Tick平今净利
+                    two_tick_close_today_net_profit REAL,        -- 2Tick平今净利
+                    one_tick_close_today_return_rate REAL,       -- 1Tick平今收益率%
+                    two_tick_close_today_return_rate REAL,       -- 2Tick平今收益率%
+                    is_main_contract INTEGER DEFAULT 0,          -- 是否主力合约 (0=否, 1=是)
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- 创建时间
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP  -- 更新时间
+                )
+            """)
+
+            # 创建期货合约数据表的索引
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_futures_exchange ON futures_contracts(exchange)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_futures_variety_code ON futures_contracts(variety_code)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_futures_is_main ON futures_contracts(is_main_contract)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_futures_variety_name ON futures_contracts(variety_name)")
+
             # 创建股票日K结果分析数据表（精细版本）
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS daily_k_analysis (
@@ -1554,3 +1606,272 @@ class IndustryDataDB:
 
         return result_df
 
+    def insert_futures_contracts(self, contracts_data: List[Dict]) -> int:
+        """
+        插入期货合约基础数据
+
+        Args:
+            contracts_data: 期货合约数据列表，每个元素包含解析出的38个字段
+
+        Returns:
+            成功插入的记录数
+        """
+        if not contracts_data:
+            return 0
+
+        inserted_count = 0
+
+        with self.get_connection() as conn:
+            for record in contracts_data:
+                try:
+                    # 将"是否主力合约"转换为整数（"是"->1, "否"->0）
+                    is_main = 1 if record.get('是否主力合约') == '是' else 0
+
+                    conn.execute("""
+                        INSERT OR REPLACE INTO futures_contracts
+                        (contract_code, exchange, contract_name, variety_code, variety_name,
+                         contract_multiplier, min_tick, open_fee_rate, open_fee_per_lot,
+                         close_fee_rate, close_fee_per_lot, close_today_fee_rate, close_today_fee_per_lot,
+                         long_margin_rate, long_margin_per_lot, short_margin_rate, short_margin_per_lot,
+                         prev_settlement_price, prev_close_price, latest_price, volume, open_interest,
+                         one_lot_open_fee, one_lot_close_fee, one_lot_close_today_fee,
+                         long_one_lot_margin, short_one_lot_margin, one_lot_market_value,
+                         one_tick_close_pnl, one_tick_close_net_profit, two_tick_close_net_profit,
+                         one_tick_close_return_rate, two_tick_close_return_rate,
+                         one_tick_close_today_net_profit, two_tick_close_today_net_profit,
+                         one_tick_close_today_return_rate, two_tick_close_today_return_rate,
+                         is_main_contract, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        record.get('合约代码'),        # contract_code
+                        record.get('交易所'),          # exchange
+                        record.get('合约名称'),        # contract_name
+                        record.get('品种代码'),        # variety_code
+                        record.get('品种名称'),        # variety_name
+                        self._safe_float(record.get('合约乘数')),  # contract_multiplier
+                        self._safe_float(record.get('最小跳动')),  # min_tick
+                        self._safe_float(record.get('开仓费率')),  # open_fee_rate
+                        self._safe_float(record.get('开仓费用/手')),  # open_fee_per_lot
+                        self._safe_float(record.get('平仓费率')),  # close_fee_rate
+                        self._safe_float(record.get('平仓费用/手')),  # close_fee_per_lot
+                        self._safe_float(record.get('平今费率')),  # close_today_fee_rate
+                        self._safe_float(record.get('平今费用/手')),  # close_today_fee_per_lot
+                        self._safe_float(record.get('做多保证金率')),  # long_margin_rate
+                        self._safe_float(record.get('做多保证金/手')),  # long_margin_per_lot
+                        self._safe_float(record.get('做空保证金率')),  # short_margin_rate
+                        self._safe_float(record.get('做空保证金/手')),  # short_margin_per_lot
+                        self._safe_float(record.get('上日结算价')),  # prev_settlement_price
+                        self._safe_float(record.get('上日收盘价')),  # prev_close_price
+                        self._safe_float(record.get('最新价')),  # latest_price
+                        self._safe_int(record.get('成交量')),  # volume
+                        self._safe_int(record.get('持仓量')),  # open_interest
+                        self._safe_float(record.get('1手开仓费用')),  # one_lot_open_fee
+                        self._safe_float(record.get('1手平仓费用')),  # one_lot_close_fee
+                        self._safe_float(record.get('1手平今费用')),  # one_lot_close_today_fee
+                        self._safe_float(record.get('做多1手保证金')),  # long_one_lot_margin
+                        self._safe_float(record.get('做空1手保证金')),  # short_one_lot_margin
+                        self._safe_float(record.get('1手市值')),  # one_lot_market_value
+                        self._safe_float(record.get('1Tick平仓盈亏')),  # one_tick_close_pnl
+                        self._safe_float(record.get('1Tick平仓净利')),  # one_tick_close_net_profit
+                        self._safe_float(record.get('2Tick平仓净利')),  # two_tick_close_net_profit
+                        self._safe_float(record.get('1Tick平仓收益率%')),  # one_tick_close_return_rate
+                        self._safe_float(record.get('2Tick平仓收益率%')),  # two_tick_close_return_rate
+                        self._safe_float(record.get('1Tick平今净利')),  # one_tick_close_today_net_profit
+                        self._safe_float(record.get('2Tick平今净利')),  # two_tick_close_today_net_profit
+                        self._safe_float(record.get('1Tick平今收益率%')),  # one_tick_close_today_return_rate
+                        self._safe_float(record.get('2Tick平今收益率%')),  # two_tick_close_today_return_rate
+                        is_main,  # is_main_contract
+                        datetime.now().strftime('%Y-%m-%d %H:%M:%S')  # updated_at
+                    ))
+                    inserted_count += 1
+                except sqlite3.Error as e:
+                    print(f"插入期货合约数据失败: {e}, 记录: {record.get('合约代码', 'Unknown')}")
+                    continue
+
+            conn.commit()
+
+        return inserted_count
+
+    def query_futures_contracts(self, contract_code: str = None, exchange: str = None,
+                                variety_code: str = None, is_main_contract: bool = None,
+                                limit: int = None) -> pd.DataFrame:
+        """
+        查询期货合约数据
+
+        Args:
+            contract_code: 合约代码，为None时查询所有
+            exchange: 交易所代码（CZCE/SHFE/DCE等）
+            variety_code: 品种代码
+            is_main_contract: 是否只查询主力合约
+            limit: 限制返回记录数
+
+        Returns:
+            包含期货合约数据的DataFrame
+        """
+        with self.get_connection() as conn:
+            sql = "SELECT * FROM futures_contracts WHERE 1=1"
+            params = []
+
+            if contract_code:
+                sql += " AND contract_code = ?"
+                params.append(contract_code)
+
+            if exchange:
+                sql += " AND exchange = ?"
+                params.append(exchange)
+
+            if variety_code:
+                sql += " AND variety_code = ?"
+                params.append(variety_code)
+
+            if is_main_contract is not None:
+                sql += " AND is_main_contract = ?"
+                params.append(1 if is_main_contract else 0)
+
+            sql += " ORDER BY variety_code, contract_code"
+
+            if limit:
+                sql += f" LIMIT {limit}"
+
+            try:
+                df = pd.read_sql_query(sql, conn, params=params)
+                return df
+            except sqlite3.Error as e:
+                print(f"查询期货合约数据失败: {e}")
+                return pd.DataFrame()
+
+    def get_futures_variety_list(self) -> List[str]:
+        """
+        获取所有期货品种列表
+
+        Returns:
+            品种代码列表
+        """
+        with self.get_connection() as conn:
+            try:
+                cursor = conn.execute("""
+                    SELECT DISTINCT variety_code
+                    FROM futures_contracts
+                    ORDER BY variety_code
+                """)
+                return [row['variety_code'] for row in cursor.fetchall()]
+            except sqlite3.Error as e:
+                print(f"获取期货品种列表失败: {e}")
+                return []
+
+    def get_main_contracts(self) -> pd.DataFrame:
+        """
+        获取所有主力合约
+
+        Returns:
+            主力合约DataFrame
+        """
+        return self.query_futures_contracts(is_main_contract=True)
+
+    def query_active_main_contracts(self, min_amount: float = 20.0,
+                                    max_margin: float = 50000.0,
+                                    max_fee: float = 30.0) -> pd.DataFrame:
+        """
+        查询成交额大于指定值、保证金和手续费符合条件的主力合约
+
+        Args:
+            min_amount: 最小成交额（单位：亿元），默认20亿
+            max_margin: 最大一手保证金（做多和做空都需要小于此值，单位：元），默认5万
+            max_fee: 最大交易一手费率（开仓+平仓，单位：元），默认30元
+
+        Returns:
+            包含合约详细信息的DataFrame
+        """
+        with self.get_connection() as conn:
+            # 成交额 = 成交量(手) * 合约乘数 * 最新价
+            # 1亿 = 100,000,000
+            min_amount_in_yuan = min_amount * 100000000
+
+            sql = """
+                SELECT
+                    contract_code,
+                    contract_name,
+                    variety_name,
+                    exchange,
+                    volume,
+                    contract_multiplier,
+                    latest_price,
+                    long_one_lot_margin,
+                    short_one_lot_margin,
+                    one_lot_open_fee,
+                    one_lot_close_fee,
+                    (one_lot_open_fee + one_lot_close_fee) as total_fee,
+                    (volume * contract_multiplier * latest_price) as turnover_amount,
+                    (volume * contract_multiplier * latest_price) / 100000000.0 as turnover_in_yi
+                FROM futures_contracts
+                WHERE is_main_contract = 1
+                  AND volume IS NOT NULL
+                  AND contract_multiplier IS NOT NULL
+                  AND latest_price IS NOT NULL
+                  AND latest_price > 0
+                  AND long_one_lot_margin IS NOT NULL
+                  AND long_one_lot_margin > 0
+                  AND short_one_lot_margin IS NOT NULL
+                  AND short_one_lot_margin > 0
+                  AND one_lot_open_fee IS NOT NULL
+                  AND one_lot_close_fee IS NOT NULL
+                HAVING (volume * contract_multiplier * latest_price) >= ?
+                  AND long_one_lot_margin < ?
+                  AND short_one_lot_margin < ?
+                  AND (one_lot_open_fee + one_lot_close_fee) < ?
+                ORDER BY turnover_amount DESC
+            """
+
+            try:
+                df = pd.read_sql_query(sql, conn, params=[min_amount_in_yuan, max_margin, max_margin, max_fee])
+                return df
+            except sqlite3.Error as e:
+                print(f"查询活跃主力合约失败: {e}")
+                return pd.DataFrame()
+
+    def get_active_main_contracts_simple(self, min_amount: float = 20.0,
+                                        max_margin: float = 50000.0,
+                                        max_fee: float = 30.0) -> List[Dict]:
+        """
+        查询符合条件的主力合约（简化版本）
+
+        Args:
+            min_amount: 最小成交额（单位：亿元），默认20亿
+            max_margin: 最大一手保证金（做多和做空都需要小于此值，单位：元），默认5万
+            max_fee: 最大交易一手费率（开仓+平仓，单位：元），默认30元
+
+        Returns:
+            包含合约代码和名称的字典列表
+            格式: [{"contract_code": "cu2505", "contract_name": "cu2505"}, ...]
+        """
+        df = self.query_active_main_contracts(min_amount, max_margin, max_fee)
+
+        if df.empty:
+            return []
+
+        result = []
+        for _, row in df.iterrows():
+            result.append({
+                "contract_code": row['contract_code'],
+                "contract_name": row['contract_name']
+            })
+
+        return result
+
+    def _safe_float(self, value):
+        """安全转换为浮点数"""
+        if value is None or value == '':
+            return None
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return None
+
+    def _safe_int(self, value):
+        """安全转换为整数"""
+        if value is None or value == '':
+            return None
+        try:
+            return int(value)
+        except (ValueError, TypeError):
+            return None

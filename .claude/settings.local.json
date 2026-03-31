@@ -2,13 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(python:*)",
-      "mcp__playwright__browser_navigate",
-      "mcp__playwright__browser_network_requests",
       "Bash(timeout:*)",
-      "mcp__playwright__browser_evaluate",
-      "mcp__playwright__browser_run_code",
-      "Bash(curl:*)",
-      "Bash(dir:*)"
+      "mcp__playwright__browser_navigate"
     ],
     "deny": [],
     "ask": []
