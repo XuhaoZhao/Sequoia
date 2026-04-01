@@ -10,29 +10,23 @@
 2. 支持自定义期货代码列表
 3. 模拟真实浏览器行为，躲避反爬
 4. 自动解析期货数据
-5. 支持修改请求参数获取指定数据
-6. 支持导出CSV格式
-7. 从数据库自动加载活跃主力合约
+5. 数据保存到数据库（带去重）
+6. 从数据库自动加载活跃主力合约
 
 使用方法：
     # 创建拦截器实例
     interceptor = SinaFuturesInterceptor(
         headless=False,  # 是否无头模式
         custom_symbols=['nf_V2605', 'nf_LC2703'],  # 自定义期货代码
-        wait_time=15  # 等待时间（秒）
+        continuous=True  # 持续监听模式
     )
 
     # 运行拦截
     data = asyncio.run(interceptor.intercept_futures_data())
-
-    # 导出CSV（可选）
-    if data:
-        interceptor.export_to_csv(data, 'futures_data.csv')
 """
 
 import asyncio
 import re
-import csv
 import sys
 import os
 from datetime import datetime
@@ -76,14 +70,17 @@ class SinaFuturesInterceptor:
         # 请求拦截计数（用于日志）
         self.request_intercept_count = 0
 
-        # CSV文件路径
-        self.csv_file = None
-
         # 跟踪成功获取的合约（用于最后统计缺失合约）
         self.captured_symbols = set()
 
         # 合约代码修正映射（记录旧代码到新代码的转换）
         self.contract_code_corrections = {}
+
+        # 数据库管理器
+        self.db = IndustryDataDB()
+
+        # 标记是否已打印第一次拦截详情
+        self.first_intercept_printed = False
 
         print(f"初始化新浪财经期货数据拦截器")
         print(f"目标页面: {self.target_url}")
@@ -91,6 +88,7 @@ class SinaFuturesInterceptor:
         print(f"合约列表: {', '.join(self.custom_symbols[:10])}{'...' if len(self.custom_symbols) > 10 else ''}")
         print(f"无头模式: {headless}")
         print(f"监听模式: {'持续监听（按Ctrl+C停止）' if continuous else '定时监听'}")
+        print(f"数据存储: 数据库 (sina_futures_realtime表)")
 
         # 首次运行时，修正所有合约代码格式
         self._fix_all_contract_codes()
@@ -188,9 +186,6 @@ class SinaFuturesInterceptor:
         """
         拦截期货数据 - 持续监听模式
         """
-        # 初始化CSV文件
-        self.csv_file = self._init_csv_file()
-
         async with async_playwright() as p:
             # 启动浏览器
             browser = await p.chromium.launch(headless=self.headless)
@@ -269,24 +264,24 @@ class SinaFuturesInterceptor:
                                         # 解析数据
                                         parsed_data = self._parse_sina_response(text)
                                         if parsed_data:
-                                            # 实时追加到CSV
-                                            self._append_to_csv(parsed_data)
+                                            # 保存到数据库
+                                            inserted = self.db.insert_sina_futures_realtime(parsed_data)
 
                                             # 检查缺失的合约
                                             missing_symbols = self._check_missing_symbols()
 
-                                            # 显示统计信息（每10次显示一次详情）
-                                            if self.intercept_count % 10 == 1:
-                                                print(f"\n✓ 第 {self.intercept_count} 次拦截 - {len(parsed_data)} 条数据")
-                                                self._print_futures_data(parsed_data)
-                                                # 打印缺失合约
-                                                if missing_symbols:
-                                                    self._print_missing_symbols(missing_symbols)
+                                            # 只在第一次拦截时打印详情
+                                            if not self.first_intercept_printed:
+                                                print(f"\n✓ 第 {self.intercept_count} 次拦截 - {len(parsed_data)} 条数据 (已保存 {inserted} 条)")
+                                                self._print_futures_data(parsed_data[:3])  # 只打印前3条
+                                                self.first_intercept_printed = True
+                                            # 每10次打印简要信息
+                                            elif self.intercept_count % 10 == 1:
+                                                print(f"\n✓ 第 {self.intercept_count} 次拦截 - {len(parsed_data)} 条数据 (已保存 {inserted} 条)")
                                             else:
-                                                print(f"✓ 第 {self.intercept_count} 次拦截 - {len(parsed_data)} 条数据", end='\r')
-                                                # 每次都打印缺失的合约（简洁版）
-                                                if missing_symbols:
-                                                    print(f"  | 缺失: {len(missing_symbols)}个", end='\r')
+                                                # 简洁打印
+                                                missing_info = f" | 缺失: {len(missing_symbols)}个" if missing_symbols else ""
+                                                print(f"✓ 第 {self.intercept_count} 次拦截 - {len(parsed_data)}条 (保存{inserted}条){missing_info}", end='\r')
 
                                 except Exception as e:
                                     print(f"\n✗ 响应处理失败: {e}")
@@ -306,7 +301,7 @@ class SinaFuturesInterceptor:
             print("页面加载完成，开始持续监听实时数据...")
             print("按 Ctrl+C 停止监听")
             print("=" * 80)
-            print(f"\n数据实时保存到: {self.csv_file}\n")
+            print(f"\n数据将实时保存到数据库 (sina_futures_realtime表)\n")
 
             try:
                 # 持续监听 - 直到手动停止
@@ -333,7 +328,7 @@ class SinaFuturesInterceptor:
             print(f"  总拦截次数: {self.intercept_count}")
             print(f"  运行时长: {elapsed:.0f}秒 ({elapsed/60:.1f}分钟)")
             print(f"  平均频率: {self.intercept_count/elapsed:.2f}次/秒" if elapsed > 0 else "")
-            print(f"  数据文件: {self.csv_file}")
+            print(f"  数据存储: 数据库 (sina_futures_realtime表)")
 
             # 显示合约代码修正统计
             if self.contract_code_corrections:
@@ -436,27 +431,6 @@ class SinaFuturesInterceptor:
 
         print("-" * 80)
 
-    def _init_csv_file(self):
-        """
-        初始化CSV文件，写入表头
-        """
-        import os
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"data/sina_futures_realtime_{timestamp}.csv"
-
-        # 确保目录存在
-        os.makedirs(os.path.dirname(filename) if os.path.dirname(filename) else '.', exist_ok=True)
-
-        # 写入表头
-        headers = ['期货代码', '名称', '合约', '最新价', '昨收', '今开', '最高', '最低',
-                  '买一', '卖一', '成交量', '持仓量', '时间', '序号']
-
-        with open(filename, 'w', newline='', encoding='utf-8-sig') as f:
-            writer = csv.DictWriter(f, fieldnames=headers)
-            writer.writeheader()
-
-        return filename
-
     def _check_missing_symbols(self):
         """
         检查缺失的合约
@@ -488,64 +462,6 @@ class SinaFuturesInterceptor:
             print(f"  ... 还有 {len(missing_symbols) - 20} 个合约未显示")
 
         print(f"{'─' * 80}")
-
-    def _append_to_csv(self, data_list):
-        """
-        追加数据到CSV文件
-        """
-        if not self.csv_file or not data_list:
-            return
-
-        try:
-            with open(self.csv_file, 'a', newline='', encoding='utf-8-sig') as f:
-                fieldnames = list(data_list[0].keys())
-                writer = csv.DictWriter(f, fieldnames=fieldnames)
-
-                # 为每条数据添加序号（不修改原始数据）
-                for data in data_list:
-                    row = data.copy()
-                    row['序号'] = self.intercept_count
-                    writer.writerow(row)
-                    
-
-        except Exception as e:
-            print(f"\n✗ 追加CSV失败: {e}")
-
-    def export_to_csv(self, data_list, filename=None):
-        """
-        将数据导出到CSV文件
-        :param data_list: 数据列表
-        :param filename: 文件名（默认自动生成）
-        :return: 文件路径
-        """
-        if not data_list:
-            print("⚠ 没有数据可导出")
-            return None
-
-        try:
-            # 自动生成文件名
-            if filename is None:
-                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                filename = f"data/sina_futures_{timestamp}.csv"
-
-            # 确保目录存在
-            import os
-            os.makedirs(os.path.dirname(filename) if os.path.dirname(filename) else '.', exist_ok=True)
-
-            # 写入CSV
-            with open(filename, 'w', newline='', encoding='utf-8-sig') as f:
-                if data_list:
-                    writer = csv.DictWriter(f, fieldnames=data_list[0].keys())
-                    writer.writeheader()
-                    writer.writerows(data_list)
-
-            print(f"\n✓ 数据已导出到: {filename}")
-            print(f"  共导出 {len(data_list)} 条记录")
-            return filename
-
-        except Exception as e:
-            print(f"✗ 导出CSV失败: {e}")
-            return None
 
 
 def main():
