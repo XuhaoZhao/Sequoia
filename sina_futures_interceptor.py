@@ -373,28 +373,66 @@ class SinaFuturesInterceptor:
                 # 分割数据字段
                 fields = data_str.split(',')
 
-                if len(fields) < 5:
+                # DEBUG: 第一次拦截时打印完整的API响应格式
+                if not self.first_intercept_printed:
+                    print(f"\n{'='*80}")
+                    print(f"[DEBUG] API响应格式分析 - 合约: {symbol}")
+                    print(f"字段总数: {len(fields)}")
+                    print(f"完整响应字符串: {data_str[:200]}...")
+                    print(f"\n字段详情 (前20个):")
+                    for i in range(min(20, len(fields))):
+                        print(f"  fields[{i}] = '{fields[i]}'")
+                    print(f"\n时间字段 (fields[1]): '{fields[1] if len(fields) > 1 else 'N/A'}'")
+                    print(f"{'='*80}\n")
+
+                if len(fields) < 2:
                     continue
 
                 # 记录成功获取的合约代码
                 # 注意：代码已经在初始化时修正过了，这里直接使用
                 self.captured_symbols.add(symbol)
 
+                # 提取API返回的时间
+                # 根据用户反馈，时间在 fields[1]
+                # 新浪财经API格式：
+                # fields[1] = 时间 (可能是 "15:00:00" 或 "2026-04-07 15:00:00")
+                api_datetime_field = fields[1] if len(fields) > 1 else ''
+
+                # 解析 fields[1]
+                if api_datetime_field:
+                    # 如果包含日期和时间
+                    if ' ' in api_datetime_field and '-' in api_datetime_field:
+                        formatted_datetime = api_datetime_field  # 已经是完整格式
+                    # 如果只有时间 (HH:MM:SS)
+                    elif ':' in api_datetime_field:
+                        # 使用今天的日期 + API返回的时间
+                        today = datetime.now().strftime('%Y-%m-%d')
+                        formatted_datetime = f"{today} {api_datetime_field}"
+                    # 如果是其他格式，直接使用
+                    else:
+                        formatted_datetime = api_datetime_field
+                else:
+                    # 如果API没有返回时间，使用当前时间
+                    formatted_datetime = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
                 # 构造数据字典
+                # 新浪财经API字段映射（根据实际测试结果）：
+                # fields[0]=品种名称, fields[1]=时间, fields[2]=今开, fields[3]=最高,
+                # fields[4]=最低, fields[5]=最新价, fields[6]=?, fields[7]=买一, fields[8]=卖一,
+                # fields[9]=结算价, fields[10]=昨结算, fields[11-12]=?, fields[13]=持仓量, fields[14]=成交量
                 data = {
                     '期货代码': symbol.replace('nf_', ''),  # 移除nf_前缀
                     '名称': fields[0] if len(fields) > 0 else '',
-                    '合约': fields[1] if len(fields) > 1 else '',
-                    '最新价': fields[2] if len(fields) > 2 else '',
-                    '昨收': fields[3] if len(fields) > 3 else '',
-                    '今开': fields[4] if len(fields) > 4 else '',
-                    '最高': fields[5] if len(fields) > 5 else '',
-                    '最低': fields[6] if len(fields) > 6 else '',
-                    '买一': fields[7] if len(fields) > 7 else '',
-                    '卖一': fields[8] if len(fields) > 8 else '',
-                    '成交量': fields[9] if len(fields) > 9 else '',
-                    '持仓量': fields[10] if len(fields) > 10 else '',
-                    '时间': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    '最新价': fields[5] if len(fields) > 5 else '',        # 修正：fields[5]是最新价
+                    '昨收': fields[10] if len(fields) > 10 else '',       # 修正：fields[10]是昨结算
+                    '今开': fields[2] if len(fields) > 2 else '',         # 修正：fields[2]是今开
+                    '最高': fields[3] if len(fields) > 3 else '',         # 修正：fields[3]是最高
+                    '最低': fields[4] if len(fields) > 4 else '',         # 修正：fields[4]是最低
+                    '买一': fields[7] if len(fields) > 7 else '',         # 修正：fields[7]是买一
+                    '卖一': fields[8] if len(fields) > 8 else '',         # 修正：fields[8]是卖一
+                    '成交量': fields[14] if len(fields) > 14 else '',     # 修正：fields[14]是成交量
+                    '持仓量': fields[13] if len(fields) > 13 else '',     # 修正：fields[13]是持仓量
+                    '时间': formatted_datetime,
                     '序号': self.intercept_count  # 添加拦截序号
                 }
 
@@ -416,7 +454,7 @@ class SinaFuturesInterceptor:
         print("-" * 80)
 
         for data in data_list:
-            print(f"\n【{data['名称']}】 {data['合约']}")
+            print(f"\n【{data['名称']}】 {data['期货代码']}")
             print(f"  代码: {data['期货代码']}")
             print(f"  最新价: {data['最新价']}")
             print(f"  昨收: {data['昨收']}")

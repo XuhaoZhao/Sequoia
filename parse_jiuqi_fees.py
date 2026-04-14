@@ -214,6 +214,11 @@ class JiuqiWebParser:
                             # 格式: "白银2606 (ag2606)" 或 "螺纹钢2605 (rb2605)"
                             contract_code, variety_code, variety_name_cn = self._parse_contract_info(contract_info)
 
+                            # 过滤掉国债期货（如果品种名称中包含"国债"则跳过）
+                            if '国债' in variety_name_cn:
+                                logging.debug(f"  跳过国债合约: {contract_info} ({variety_name_cn})")
+                                continue
+
                             # 判断是否主力合约
                             is_main_contract = '是' if '主力合约' in remark else '否'
 

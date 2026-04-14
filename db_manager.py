@@ -149,7 +149,6 @@ class IndustryDataDB:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     contract_code TEXT NOT NULL,                  -- 合约代码，如 V2605
                     name TEXT NOT NULL,                           -- 品种名称，如 聚氯乙烯
-                    contract TEXT NOT NULL,                       -- 合约名称，如 V2605
                     latest_price REAL,                            -- 最新价
                     prev_close REAL,                              -- 昨收
                     open_price REAL,                              -- 今开
@@ -162,7 +161,7 @@ class IndustryDataDB:
                     datetime TEXT NOT NULL,                       -- 更新时间 (格式: YYYY-MM-DD HH:MM:SS)
                     sequence INTEGER NOT NULL,                    -- 拦截序号
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- 创建时间
-                    UNIQUE(contract_code, datetime, sequence)
+                    UNIQUE(contract_code, datetime)
                 )
             """)
 
@@ -250,7 +249,7 @@ class IndustryDataDB:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_daily_k_analysis_volume_status ON daily_k_analysis(volume_status)")
 
             conn.commit()
-    
+
     def _get_table_name(self, period: str, year_month: str) -> str:
         """
         生成表名
@@ -2230,32 +2229,31 @@ class IndustryDataDB:
 
     def insert_sina_futures_realtime(self, data_list: List[Dict]) -> int:
         """
-        插入新浪期货实时数据（带去重）
+        插入新浪期货实时数据（带去重，使用REPLACE更新重复数据）
 
         Args:
             data_list: 期货实时数据列表
 
         Returns:
-            成功插入的记录数
+            成功插入/更新的记录数
         """
         if not data_list:
             return 0
 
         inserted_count = 0
-        skipped_count = 0
+        updated_count = 0
 
         with self.get_connection() as conn:
             for record in data_list:
                 try:
                     conn.execute("""
-                        INSERT OR IGNORE INTO sina_futures_realtime
-                        (contract_code, name, contract, latest_price, prev_close, open_price,
+                        INSERT OR REPLACE INTO sina_futures_realtime
+                        (contract_code, name, latest_price, prev_close, open_price,
                          high_price, low_price, bid1, ask1, volume, open_interest, datetime, sequence)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         record.get('期货代码'),                    # contract_code
                         record.get('名称'),                        # name
-                        record.get('合约'),                        # contract
                         self._safe_float(record.get('最新价')),    # latest_price
                         self._safe_float(record.get('昨收')),      # prev_close
                         self._safe_float(record.get('今开')),      # open_price
@@ -2268,20 +2266,13 @@ class IndustryDataDB:
                         record.get('时间'),                        # datetime
                         record.get('序号')                         # sequence
                     ))
-                    # 检查是否插入了新记录
-                    if conn.total_changes > 0:
-                        inserted_count += 1
-                    else:
-                        skipped_count += 1
+                    # 每次成功插入都计数（包括新插入和替换更新）
+                    inserted_count += 1
                 except sqlite3.Error as e:
                     print(f"插入新浪期货实时数据失败: {e}, 记录: {record.get('期货代码', 'Unknown')}")
                     continue
 
             conn.commit()
-
-        # 只在有跳过记录时打印提示
-        if skipped_count > 0 and inserted_count > 0:
-            print(f"  (跳过重复数据: {skipped_count} 条)")
 
         return inserted_count
 
@@ -2345,5 +2336,81 @@ class IndustryDataDB:
 
         except sqlite3.Error as e:
             print(f"清空新浪期货实时数据表失败: {e}")
+            return 0
+
+    def delete_sina_futures_realtime_by_time_range(self, start_datetime: str = None, end_datetime: str = None) -> int:
+        """
+        按时间范围删除新浪期货实时数据
+
+        Args:
+            start_datetime: 开始时间 (格式: YYYY-MM-DD HH:MM:SS)
+            end_datetime: 结束时间 (格式: YYYY-MM-DD HH:MM:SS)
+
+        Returns:
+            成功删除的记录数
+
+        Examples:
+            # 删除指定时间段的数据
+            db.delete_sina_futures_realtime_by_time_range(
+                start_datetime="2026-04-01 00:00:00",
+                end_datetime="2026-04-01 23:59:59"
+            )
+
+            # 删除某个日期之后的所有数据
+            db.delete_sina_futures_realtime_by_time_range(start_datetime="2026-04-01 00:00:00")
+
+            # 删除某个日期之前的所有数据
+            db.delete_sina_futures_realtime_by_time_range(end_datetime="2026-04-01 00:00:00")
+        """
+        try:
+            with self.get_connection() as conn:
+                # 先查询将要删除的记录数量
+                count_sql = "SELECT COUNT(*) FROM sina_futures_realtime WHERE 1=1"
+                count_params = []
+
+                if start_datetime:
+                    count_sql += " AND datetime >= ?"
+                    count_params.append(start_datetime)
+
+                if end_datetime:
+                    count_sql += " AND datetime <= ?"
+                    count_params.append(end_datetime)
+
+                cursor = conn.execute(count_sql, count_params)
+                delete_count = cursor.fetchone()[0]
+
+                if delete_count == 0:
+                    print(f"没有找到符合时间条件的数据需要删除")
+                    return 0
+
+                # 执行删除操作
+                delete_sql = "DELETE FROM sina_futures_realtime WHERE 1=1"
+                delete_params = []
+
+                if start_datetime:
+                    delete_sql += " AND datetime >= ?"
+                    delete_params.append(start_datetime)
+
+                if end_datetime:
+                    delete_sql += " AND datetime <= ?"
+                    delete_params.append(end_datetime)
+
+                cursor = conn.execute(delete_sql, delete_params)
+                deleted_count = cursor.rowcount
+                conn.commit()
+
+                # 打印详细信息
+                condition_desc = []
+                if start_datetime:
+                    condition_desc.append(f"起始时间 >= {start_datetime}")
+                if end_datetime:
+                    condition_desc.append(f"结束时间 <= {end_datetime}")
+
+                condition_str = " 且 ".join(condition_desc) if condition_desc else "所有数据"
+                print(f"成功删除 {deleted_count} 条新浪期货实时数据 (条件: {condition_str})")
+                return deleted_count
+
+        except sqlite3.Error as e:
+            print(f"删除新浪期货实时数据失败: {e}")
             return 0
 
