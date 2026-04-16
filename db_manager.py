@@ -248,7 +248,119 @@ class IndustryDataDB:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_daily_k_analysis_ma_arrangement ON daily_k_analysis(ma_arrangement)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_daily_k_analysis_volume_status ON daily_k_analysis(volume_status)")
 
+            # 创建期货品种交易时间表
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS futures_trading_hours (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    variety_name TEXT NOT NULL,                  -- 品种名称，如 鸡蛋、生猪
+                    exchange TEXT NOT NULL,                      -- 所属交易所，如 大商所
+                    exchange_code TEXT,                          -- 交易所代码，如 DCE
+                    day_session TEXT NOT NULL,                   -- 日盘时间，如 9:00-10:15,10:30-11:30,13:30-15:00
+                    night_session TEXT,                          -- 夜盘时间，如 21:00-23:00（无夜盘则为NULL）
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(variety_name, exchange)
+                )
+            """)
+
+            # 创建期货品种交易时间表的索引
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_trading_hours_exchange ON futures_trading_hours(exchange)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_trading_hours_exchange_code ON futures_trading_hours(exchange_code)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_trading_hours_variety ON futures_trading_hours(variety_name)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_trading_hours_night ON futures_trading_hours(night_session)")
+
             conn.commit()
+
+    def insert_futures_trading_hours(self, data: List[Dict]) -> int:
+        """
+        插入期货品种交易时间数据
+
+        Args:
+            data: 交易时间数据列表，每个元素包含:
+                - variety_name: 品种名称
+                - exchange: 所属交易所（中文名）
+                - exchange_code: 交易所代码（可选）
+                - day_session: 日盘时间
+                - night_session: 夜盘时间（可选，无夜盘则为None）
+
+        Returns:
+            成功插入的记录数
+        """
+        if not data:
+            return 0
+
+        inserted_count = 0
+        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+        with self.get_connection() as conn:
+            for record in data:
+                try:
+                    conn.execute("""
+                        INSERT OR REPLACE INTO futures_trading_hours
+                        (variety_name, exchange, exchange_code, day_session, night_session, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, (
+                        record.get('variety_name'),
+                        record.get('exchange'),
+                        record.get('exchange_code'),
+                        record.get('day_session'),
+                        record.get('night_session'),
+                        current_time
+                    ))
+                    inserted_count += 1
+                except sqlite3.Error as e:
+                    print(f"插入期货交易时间数据失败: {e}, 记录: {record.get('variety_name', 'Unknown')}")
+                    continue
+
+            conn.commit()
+
+        return inserted_count
+
+    def query_futures_trading_hours(self, variety_name: str = None,
+                                    exchange: str = None,
+                                    exchange_code: str = None,
+                                    has_night_session: bool = None) -> pd.DataFrame:
+        """
+        查询期货品种交易时间
+
+        Args:
+            variety_name: 品种名称，为None时查询所有
+            exchange: 所属交易所（中文名），为None时查询所有
+            exchange_code: 交易所代码（DCE/CZCE/GFEX/SHFE/INE/CFFEX），为None时查询所有
+            has_night_session: 是否有夜盘，None时不筛选
+
+        Returns:
+            包含交易时间的DataFrame
+        """
+        with self.get_connection() as conn:
+            sql = "SELECT * FROM futures_trading_hours WHERE 1=1"
+            params = []
+
+            if variety_name:
+                sql += " AND variety_name = ?"
+                params.append(variety_name)
+
+            if exchange:
+                sql += " AND exchange = ?"
+                params.append(exchange)
+
+            if exchange_code:
+                sql += " AND exchange_code = ?"
+                params.append(exchange_code)
+
+            if has_night_session is True:
+                sql += " AND night_session IS NOT NULL"
+            elif has_night_session is False:
+                sql += " AND night_session IS NULL"
+
+            sql += " ORDER BY exchange_code, variety_name"
+
+            try:
+                df = pd.read_sql_query(sql, conn, params=params)
+                return df
+            except sqlite3.Error as e:
+                print(f"查询期货交易时间数据失败: {e}")
+                return pd.DataFrame()
 
     def _get_table_name(self, period: str, year_month: str) -> str:
         """

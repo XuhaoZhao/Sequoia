@@ -1,32 +1,36 @@
 """
-新浪财经期货数据拦截器
+东方财富期货实时数据拦截器
 
-使用 Playwright 拦截新浪财经期货页面的实时数据API
-目标页面: https://finance.sina.com.cn/futures/quotes/V2605.shtml
-目标API: https://hq.sinajs.cn/?_=时间戳/&list=期货代码列表
+使用 Playwright 拦截东方财富期货页面自身的实时数据API请求
+目标页面: https://qhweb.eastmoney.com/quote
+数据API: https://futsseapi.eastmoney.com/list/trans/block/risk/mk0830
 
 特点：
-1. 拦截期货页面的实时数据API
-2. 支持自定义期货代码列表
-3. 模拟真实浏览器行为，躲避反爬
-4. 自动解析期货数据
-5. 数据保存到数据库（带去重）
-6. 从数据库自动加载活跃主力合约
+1. 被动拦截页面自身发出的定时数据请求，不主动fetch
+2. 通过浏览器访问页面，自动携带正确的Referer/Cookie，绕过反爬
+3. 自动解析JSON响应数据
+4. 数据保存到数据库（带去重）
+5. 支持持续监听模式
+
+东方财富API返回字段说明：
+  name  - 名称        dm  - 合约代码      p   - 最新价
+  zdf   - 涨跌幅%     vol - 成交量        ccl - 持仓量
+  rz    - 日增仓       cje - 成交额        zde - 涨跌额
+  o     - 今开        h   - 最高          l   - 最低
+  zf    - 振幅%       zjsj - 昨结算       zt  - 涨停
+  dt    - 跌停        tjd - 套保投机比    tag - 标签
+  sc    - 品种编码    uid - 交易所|合约    zsjd - 市价单状态
 
 使用方法：
-    # 创建拦截器实例
-    interceptor = SinaFuturesInterceptor(
-        headless=False,  # 是否无头模式
-        custom_symbols=['nf_V2605', 'nf_LC2703'],  # 自定义期货代码
-        continuous=True  # 持续监听模式
+    interceptor = EastMoneyFuturesInterceptor(
+        headless=False,   # 是否无头模式
+        continuous=True   # 持续监听模式
     )
-
-    # 运行拦截
-    data = asyncio.run(interceptor.intercept_futures_data())
+    data = asyncio.run(interceptor.start())
 """
 
 import asyncio
-import re
+import json
 import sys
 import os
 from datetime import datetime
@@ -37,571 +41,389 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from db_manager import IndustryDataDB
 
 
-class SinaFuturesInterceptor:
+class EastMoneyFuturesInterceptor:
     """
-    使用 Playwright 拦截新浪财经期货实时数据
+    使用 Playwright 拦截东方财富期货页面自身发出的实时数据API
     """
-    def __init__(self, headless=False, custom_symbols=None, symbol_name_map=None, continuous=True):
+
+    # 目标页面
+    TARGET_URL = "https://qhweb.eastmoney.com/quote"
+
+    # 需要拦截的API路径关键词
+    API_PATTERN = "futsseapi.eastmoney.com/list/trans/block/risk/mk0830"
+
+    def __init__(self, headless=False, continuous=True):
         """
         初始化拦截器
-        :param headless: 是否无头模式（True不显示浏览器，False显示浏览器）
-        :param custom_symbols: 自定义期货代码列表，例如 ['nf_V2605', 'nf_LC2703']
-        :param symbol_name_map: 合约代码到品种名称的映射，例如 {'nf_V2605': '聚氯乙烯'}
-        :param continuous: 是否持续监听（True=一直监听直到手动停止，False=指定时间后停止）
+        :param headless: 是否无头模式
+        :param continuous: 是否持续监听
         """
         self.headless = headless
-        self.continuous = continuous  # 持续监听模式
-        self.custom_symbols = custom_symbols or ['nf_V2605']  # 默认获取V2605
-        self.symbol_name_map = symbol_name_map or {}  # 合约名称映射
-
-        # 目标页面URL
-        self.target_url = "https://finance.sina.com.cn/futures/quotes/V2605.shtml"
-
-        # API URL模式
-        self.api_pattern = "https://hq.sinajs.cn/"
-
-        # 存储拦截到的数据
-        self.captured_data = []
-
-        # 统计信息
-        self.intercept_count = 0
-        self.start_time = None
-
-        # 请求拦截计数（用于日志）
-        self.request_intercept_count = 0
-
-        # 跟踪成功获取的合约（用于最后统计缺失合约）
-        self.captured_symbols = set()
-
-        # 合约代码修正映射（记录旧代码到新代码的转换）
-        self.contract_code_corrections = {}
+        self.continuous = continuous
 
         # 数据库管理器
         self.db = IndustryDataDB()
 
-        # 标记是否已打印第一次拦截详情
+        # 统计信息
+        self.intercept_count = 0
+        self.total_records = 0
+        self.filtered_count = 0
+        self.start_time = None
         self.first_intercept_printed = False
 
-        print(f"初始化新浪财经期货数据拦截器")
-        print(f"目标页面: {self.target_url}")
-        print(f"自定义期货代码数量: {len(self.custom_symbols)}")
-        print(f"合约列表: {', '.join(self.custom_symbols[:10])}{'...' if len(self.custom_symbols) > 10 else ''}")
-        print(f"无头模式: {headless}")
-        print(f"监听模式: {'持续监听（按Ctrl+C停止）' if continuous else '定时监听'}")
+        # 一次性加载交易时间到内存，避免重复查询数据库
+        # 格式: {variety_name: {'day': [(start_min, end_min), ...], 'night': [(start_min, end_min, cross_day), ...]}}
+        self.trading_hours_map = self._load_trading_hours_map()
+
+        print(f"初始化东方财富期货数据拦截器")
+        print(f"目标页面: {self.TARGET_URL}")
+        print(f"拦截API: {self.API_PATTERN}")
+        print(f"监听模式: {'持续监听（按Ctrl+C停止）' if continuous else '单次获取'}")
         print(f"数据存储: 数据库 (sina_futures_realtime表)")
+        print(f"交易时间过滤: 已加载 {len(self.trading_hours_map)} 个品种的交易时间")
 
-        # 首次运行时，修正所有合约代码格式
-        self._fix_all_contract_codes()
-
-    def _fix_all_contract_codes(self):
+    def _load_trading_hours_map(self):
         """
-        首次运行时，一次性修正所有合约代码格式
-        新浪财经格式：3位数字需要补全为4位（如 AP605 -> AP2605）
+        从数据库一次性加载所有品种的交易时间到内存字典
+        返回格式: {variety_name: {'day': [(start_min, end_min), ...], 'night': [(start_min, end_min, cross_day), ...]}}
+        时间统一转为"从0点开始的分钟数"方便比较，cross_day表示是否跨日（如夜盘21:00-02:30）
         """
-        import copy
+        trading_hours_map = {}
+        try:
+            import sqlite3
+            with self.db.get_connection() as conn:
+                cursor = conn.execute("SELECT variety_name, day_session, night_session FROM futures_trading_hours")
+                for row in cursor.fetchall():
+                    variety_name = row['variety_name']
+                    day_ranges = self._parse_time_ranges(row['day_session'])
+                    night_ranges = self._parse_time_ranges(row['night_session']) if row['night_session'] else []
+                    trading_hours_map[variety_name] = {
+                        'day': day_ranges,
+                        'night': night_ranges,
+                    }
+        except Exception as e:
+            print(f"[警告] 加载交易时间数据失败: {e}，将不进行交易时间过滤")
+        return trading_hours_map
 
-        corrected_symbols = []
-        corrections_map = {}  # 记录修正映射
+    @staticmethod
+    def _parse_time_ranges(session_str):
+        """
+        解析交易时间字符串为分钟数区间列表
+        输入: "9:00-10:15,10:30-11:30,13:30-15:00" 或 "21:00-02:30" 或 None
+        输出: [(start_min, end_min, cross_day), ...]
+          - start_min, end_min: 从0:00开始的分钟数
+          - cross_day: bool, True表示结束时间在第二天（如夜盘 21:00-02:30）
+        """
+        if not session_str:
+            return []
 
-        for symbol in self.custom_symbols:
-            # 移除 nf_ 前缀
-            code = symbol.replace('nf_', '')
-
-            # 检查数字部分是否已经是4位
-            digits_match = re.search(r'(\d+)$', code)
-            if not digits_match:
-                corrected_symbols.append(symbol)
+        ranges = []
+        for segment in session_str.split(','):
+            segment = segment.strip()
+            if '-' not in segment:
+                continue
+            parts = segment.split('-')
+            if len(parts) != 2:
                 continue
 
-            digits = digits_match.group(1)
+            start_h, start_m = map(int, parts[0].split(':'))
+            end_h, end_m = map(int, parts[1].split(':'))
 
-            # 如果已经是4位数字，不需要修正
-            if len(digits) == 4:
-                corrected_symbols.append(symbol)
-                continue
+            start_min = start_h * 60 + start_m
+            end_min = end_h * 60 + end_m
+            cross_day = end_min < start_min  # 结束分钟 < 开始分钟 => 跨日
 
-            # 如果是3位数字，需要补全为4位
-            if len(digits) == 3:
-                # 提取品种代码和3位数字
-                match = re.match(r'^([A-Za-z]+)(\d{3})$', code)
-                if not match:
-                    corrected_symbols.append(symbol)
-                    continue
+            ranges.append((start_min, end_min, cross_day))
 
-                variety = match.group(1)  # 品种代码，如 AP
-                month_3digit = match.group(2)  # 3位数字，如 605
+        return ranges
 
-                # 根据当前年份判断完整年份
-                first_digit = int(month_3digit[0])  # 第一位，如 6
-                current_year_last_digit = datetime.now().year % 10  # 当前年份最后一位
-                current_decade = datetime.now().year // 10 * 10  # 当前年代
+    def _find_trading_hours(self, variety_name):
+        """
+        根据品种名称模糊匹配查找对应的交易时间
+        匹配规则: trading_hours_map的key是variety_name，传入的variety_name可能带有尾部数字或前缀
+        优先精确匹配，然后尝试品种名称是传入名称的前缀
+        """
+        if not variety_name:
+            return None
 
-                # 判断合约年份
-                if first_digit > current_year_last_digit:
-                    contract_year = current_decade + first_digit
-                elif first_digit < current_year_last_digit - 2:
-                    contract_year = current_decade + 10 + first_digit
-                else:
-                    contract_year = current_decade + first_digit
+        # 1. 精确匹配
+        if variety_name in self.trading_hours_map:
+            return self.trading_hours_map[variety_name]
 
-                # 补全为4位数字：年份后2位 + 月份后2位
-                year_2digit = str(contract_year)[2:]  # 如 "26"
-                month_2digit = month_3digit[1:]  # 如 "05"
-                month_4digit = f"{year_2digit}{month_2digit}"  # "2605"
+        # 2. 传入名称以交易时间表中的品种名称开头
+        # 例如: "聚丙烯月均" 匹配 "聚丙烯", "PVC月均" 匹配 "PVC"
+        for db_name, hours in self.trading_hours_map.items():
+            if variety_name.startswith(db_name):
+                return hours
 
-                # 构造新的合约代码
-                new_code = f"{variety}{month_4digit}"
-                new_symbol = f"nf_{new_code}"
+        return None
 
-                # 记录修正
-                corrected_symbols.append(new_symbol)
-                corrections_map[symbol] = new_symbol
+    def is_in_trading_hours(self, variety_name, check_time=None):
+        """
+        判断指定品种在给定时间是否处于交易时间段内
 
-                # 同时更新 symbol_name_map
-                if symbol in self.symbol_name_map:
-                    self.symbol_name_map[new_symbol] = self.symbol_name_map[symbol]
-                    del self.symbol_name_map[symbol]
+        :param variety_name: 品种名称（从API数据中提取的，如"聚氯乙烯"、"沪铜"等）
+        :param check_time: 要检查的时间，datetime对象，默认为当前时间
+        :return: True表示在交易时间内，False表示不在；若找不到品种的交易时间配置也返回True（放行）
+        """
+        if check_time is None:
+            check_time = datetime.now()
+
+        # 周末（周六=5, 周日=6）不交易
+        if check_time.weekday() >= 5:
+            return False
+
+        hours = self._find_trading_hours(variety_name)
+        if hours is None:
+            # 找不到交易时间配置，放行不过滤
+            return True
+
+        current_min = check_time.hour * 60 + check_time.minute
+
+        # 检查日盘
+        for start_min, end_min, cross_day in hours['day']:
+            if start_min <= current_min <= end_min:
+                return True
+
+        # 检查夜盘
+        for start_min, end_min, cross_day in hours['night']:
+            if cross_day:
+                # 跨日夜盘，如 21:00-02:30
+                # 当天部分: current_min >= 21:00
+                # 次日部分: current_min <= 02:30
+                if current_min >= start_min or current_min <= end_min:
+                    return True
             else:
-                corrected_symbols.append(symbol)
+                # 不跨日夜盘，如 21:00-23:00
+                if start_min <= current_min <= end_min:
+                    return True
 
-        # 如果有修正，更新custom_symbols并显示
-        if corrections_map:
-            print(f"\n🔧 合约代码自动修正:")
-            print(f"  修正数量: {len(corrections_map)} 个")
-            print(f"  修正列表:")
-            for old_code, new_code in corrections_map.items():
-                print(f"    {old_code} -> {new_code}")
-            print()
+        return False
 
-            # 更新 custom_symbols
-            self.custom_symbols = corrected_symbols
-
-            # 保存修正记录（用于最终统计）
-            self.contract_code_corrections = corrections_map
-        else:
-            self.contract_code_corrections = {}
-            print("✓ 所有合约代码格式正确，无需修正\n")
-
-    async def intercept_futures_data(self):
+    def _parse_response(self, response_json):
         """
-        拦截期货数据 - 持续监听模式
+        解析东方财富API的JSON响应，转换为数据库记录格式
+
+        东方财富字段 -> 数据库字段映射：
+          dm -> contract_code    name -> name
+          p  -> latest_price     zjsj -> prev_close (昨结算)
+          o  -> open_price       h   -> high_price
+          l  -> low_price        (无买一卖一，留空)
+          vol -> volume          ccl -> open_interest
+        """
+        data_list = []
+        # 取当前时间（精确到秒）作为价格时间戳
+        # API不返回时间，用拦截到响应的时刻作为数据时间
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+        items = response_json.get('list', [])
+        for item in items:
+            # 跳过没有成交数据的品种（如停牌、未开盘）
+            # p 为 "-" 或 0 表示无有效价格
+            p = item.get('p')
+            if p == '-' or p == 0 or p is None:
+                continue
+
+            dm = item.get('dm', '').upper()   # 合约代码转大写，如 v2605 -> V2605
+            name = item.get('name', '')       # 名称，如 PVC2605
+
+            # 从 name 中提取品种中文名（去掉合约号后缀）
+            variety_name = name
+            for suffix_digit in ['605', '606', '607', '608', '609',
+                                 '2605', '2606', '2607', '2608', '2609',
+                                 '505', '506', '507', '508', '509',
+                                 '705', '706', '707', '708', '709']:
+                if name.endswith(suffix_digit):
+                    variety_name = name[:-len(suffix_digit)]
+                    break
+
+            data = {
+                '期货代码': dm,
+                '名称': variety_name,
+                '最新价': p,
+                '昨收': item.get('zjsj'),
+                '今开': item.get('o'),
+                '最高': item.get('h'),
+                '最低': item.get('l'),
+                '买一': '',           # 东方财富此API不提供买一卖一
+                '卖一': '',
+                '成交量': item.get('vol'),
+                '持仓量': item.get('ccl'),
+                '涨跌幅': item.get('zdf'),
+                '涨跌额': item.get('zde'),
+                '成交额': item.get('cje'),
+                '日增仓': item.get('rz'),
+                '振幅': item.get('zf'),
+                '涨停': item.get('zt'),
+                '跌停': item.get('dt'),
+                '昨结算': item.get('zjsj'),
+                '标签': item.get('tag'),
+                '交易所': item.get('uid', '').split('|')[0] if '|' in str(item.get('uid', '')) else '',
+                '时间': now,
+                '序号': self.intercept_count,
+            }
+            data_list.append(data)
+
+        return data_list
+
+    def _print_futures_data(self, data_list):
+        """打印期货数据到控制台（首次拦截时展示前几条）"""
+        print("\n" + "-" * 80)
+        print("期货实时数据 (前5条):")
+        print("-" * 80)
+
+        for data in data_list[:5]:
+            print(f"\n  {data['名称']:8s} {data['期货代码']:10s} | "
+                  f"最新价: {data['最新价']:>10}  涨跌幅: {data.get('涨跌幅', '-'):>7}%  "
+                  f"成交量: {data['成交量']:>10}  持仓量: {data['持仓量']:>10}")
+            print(f"  {'':8s} {'':10s} | "
+                  f"今开: {data['今开']:>10}  最高: {data['最高']:>10}  最低: {data['最低']:>10}  "
+                  f"昨结算: {data.get('昨结算', '-'):>10}")
+
+        if len(data_list) > 5:
+            print(f"\n  ... 共 {len(data_list)} 条有效数据")
+        print("-" * 80)
+
+    async def start(self):
+        """
+        启动拦截器 - 访问页面，被动拦截页面自身发出的API响应
         """
         async with async_playwright() as p:
-            # 启动浏览器
             browser = await p.chromium.launch(headless=self.headless)
             context = await browser.new_context()
             page = await context.new_page()
 
-            print("\n" + "=" * 80)
-            print("开始监听期货数据API...")
-            print("=" * 80)
-            print(f"\n准备拦截所有包含 V2605 的API请求")
-            print(f"将替换为指定的 {len(self.custom_symbols)} 个合约")
-            print()
-
-            # 请求拦截器 - 修改请求参数
-            async def handle_route(route, request):
-                url = request.url
-
-                # 只拦截特定模式：
-                # 1. 带时间戳参数 ?_=时间戳/
-                # 2. 带list参数 /&list=...
-                # 3. list中包含V2605且有多个变量（包含逗号）
-                if '?_=' in url and '/&list=' in url:
-                    # 提取list参数值进行精确匹配
-                    list_start = url.find('list=')
-                    if list_start != -1:
-                        list_part = url[list_start + 5:].split('&')[0]  # 获取list参数值
-
-                        # 检查条件：list中包含V2605且有多个变量
-                        if 'V2605' in list_part and ',' in list_part:
-                            self.request_intercept_count += 1
-
-                            # 构造新的URL
-                            base_url = url.split('?')[0]
-                            timestamp = str(int(datetime.now().timestamp() * 1000))
-
-                            # 构造新的list参数
-                            new_list = ','.join(self.custom_symbols)
-                            new_url = f"{base_url}?_={timestamp}/&list={new_list}"
-
-                            # 第一次或每10次打印详细信息
-                            if self.request_intercept_count == 1 or self.request_intercept_count % 10 == 0:
-                                print(f"\n[请求拦截 #{self.request_intercept_count}] 替换为 {len(self.custom_symbols)} 个合约")
-                                print(f"  原URL包含: {list_part[:50]}...")
-
-                            # 继续修改后的请求
-                            await route.continue_(url=new_url)
-                            return
-
-                # 其他请求正常处理
-                await route.continue_()
-
-            # 响应拦截器
+            # 响应拦截器 - 监听页面自身发出的API请求
             async def handle_response(response):
                 url = response.url
-                # 只处理特定模式：
-                # 1. 带时间戳参数 ?_=时间戳/
-                # 2. 带list参数 /&list=...
-                # 3. list中包含V2605且有多个变量
-                if '?_=' in url and '/&list=' in url:
-                    # 提取list参数值进行精确匹配
-                    list_start = url.find('list=')
-                    if list_start != -1:
-                        list_part = url[list_start + 5:].split('&')[0]  # 获取list参数值
+                # 只处理目标API的响应
+                if self.API_PATTERN not in url:
+                    return
 
-                        # 检查条件：list中包含V2605且有多个变量
-                        # 并且是我们修改后的请求（包含我们的合约）
-                        if 'V2605' in list_part and ',' in list_part:
-                            if any(symbol in list_part for symbol in self.custom_symbols):
-                                try:
-                                    # 获取响应内容
-                                    text = await response.text()
+                try:
+                    text = await response.text()
+                    if not text:
+                        return
 
-                                    if text and len(text) > 0:
-                                        self.intercept_count += 1
+                    response_json = json.loads(text)
+                    if 'list' not in response_json:
+                        return
 
-                                        # 解析数据
-                                        parsed_data = self._parse_sina_response(text)
-                                        if parsed_data:
-                                            # 保存到数据库
-                                            inserted = self.db.insert_sina_futures_realtime(parsed_data)
+                    self.intercept_count += 1
 
-                                            # 检查缺失的合约
-                                            missing_symbols = self._check_missing_symbols()
+                    # 解析数据
+                    parsed_data = self._parse_response(response_json)
 
-                                            # 只在第一次拦截时打印详情
-                                            if not self.first_intercept_printed:
-                                                print(f"\n✓ 第 {self.intercept_count} 次拦截 - {len(parsed_data)} 条数据 (已保存 {inserted} 条)")
-                                                self._print_futures_data(parsed_data[:3])  # 只打印前3条
-                                                self.first_intercept_printed = True
-                                            # 每10次打印简要信息
-                                            elif self.intercept_count % 10 == 1:
-                                                print(f"\n✓ 第 {self.intercept_count} 次拦截 - {len(parsed_data)} 条数据 (已保存 {inserted} 条)")
-                                            else:
-                                                # 简洁打印
-                                                missing_info = f" | 缺失: {len(missing_symbols)}个" if missing_symbols else ""
-                                                print(f"✓ 第 {self.intercept_count} 次拦截 - {len(parsed_data)}条 (保存{inserted}条){missing_info}", end='\r')
+                    if parsed_data:
+                        # 过滤非交易时间段的数据
+                        now = datetime.now()
+                        filtered_data = [
+                            d for d in parsed_data
+                            if self.is_in_trading_hours(d['名称'], now)
+                        ]
+                        self.filtered_count += len(parsed_data) - len(filtered_data)
 
-                                except Exception as e:
-                                    print(f"\n✗ 响应处理失败: {e}")
+                        if not filtered_data:
+                            if not self.first_intercept_printed:
+                                print(f"\n[{self.intercept_count}] 拦截 {len(parsed_data)} 条数据，"
+                                      f"但当前时间 {now.strftime('%H:%M:%S')} 不在任何品种交易时段内，全部过滤")
+                                self.first_intercept_printed = True
+                            return
 
-            # 设置路由拦截
-            await page.route('**/*', handle_route)
+                        # 保存到数据库
+                        inserted = self.db.insert_sina_futures_realtime(filtered_data)
+                        self.total_records += inserted
 
-            # 监听响应事件
+                        # 首次拦截打印详情
+                        if not self.first_intercept_printed:
+                            total = response_json.get('total', 0)
+                            filtered_out = len(parsed_data) - len(filtered_data)
+                            print(f"\n[{self.intercept_count}] 拦截到API响应: {total} 条, "
+                                  f"有效 {len(parsed_data)} 条, 交易时段内 {len(filtered_data)} 条 "
+                                  f"(过滤非交易时段 {filtered_out} 条, 保存 {inserted} 条)")
+                            self._print_futures_data(filtered_data)
+                            self.first_intercept_printed = True
+                        else:
+                            print(f"[{self.intercept_count}] 拦截 {len(parsed_data)} 条, "
+                                  f"交易时段 {len(filtered_data)} 条, "
+                                  f"保存 {inserted} 条 | 累计: {self.total_records} 条 "
+                                  f"| 过滤: {self.filtered_count}",
+                                  end='\r')
+                except Exception as e:
+                    print(f"\n[错误] 响应处理失败: {e}")
+                    import traceback
+                    traceback.print_exc()
+
+            # 注册响应监听
             page.on('response', handle_response)
 
             # 访问目标页面
-            print(f"\n访问页面: {self.target_url}")
-            await page.goto(self.target_url, wait_until='networkidle')
+            print(f"\n正在访问页面: {self.TARGET_URL}")
+            try:
+                await page.goto(self.TARGET_URL, wait_until='networkidle', timeout=30000)
+            except Exception as e:
+                print(f"页面加载超时（不影响数据拦截）: {e}")
 
             self.start_time = datetime.now()
             print("\n" + "=" * 80)
-            print("页面加载完成，开始持续监听实时数据...")
+            print("页面加载完成，开始被动拦截页面实时数据...")
             print("按 Ctrl+C 停止监听")
             print("=" * 80)
             print(f"\n数据将实时保存到数据库 (sina_futures_realtime表)\n")
 
             try:
-                # 持续监听 - 直到手动停止
+                # 持续等待，页面会自己定时请求API，我们被动拦截
                 while self.continuous:
                     await asyncio.sleep(1)
 
-                    # 每隔60秒显示统计信息
+                    # 每60秒显示统计
                     if self.intercept_count > 0 and self.intercept_count % 60 == 0:
                         elapsed = (datetime.now() - self.start_time).total_seconds()
-                        rate = self.intercept_count / elapsed
-                        print(f"\n📊 运行统计: 已拦截 {self.intercept_count} 次 | 运行时长: {elapsed:.0f}秒 | 频率: {rate:.2f}次/秒")
+                        print(f"\n--- 运行统计: 拦截 {self.intercept_count} 次 | "
+                              f"时长 {elapsed:.0f}秒 | "
+                              f"入库 {self.total_records} 条 ---\n")
 
             except KeyboardInterrupt:
                 print("\n\n" + "=" * 80)
                 print("用户手动停止监听")
                 print("=" * 80)
 
-            # 关闭浏览器
             await browser.close()
 
-            # 显示最终统计
+            # 最终统计
             elapsed = (datetime.now() - self.start_time).total_seconds() if self.start_time else 0
-            print(f"\n📊 最终统计:")
+            print(f"\n最终统计:")
             print(f"  总拦截次数: {self.intercept_count}")
             print(f"  运行时长: {elapsed:.0f}秒 ({elapsed/60:.1f}分钟)")
-            print(f"  平均频率: {self.intercept_count/elapsed:.2f}次/秒" if elapsed > 0 else "")
-            print(f"  数据存储: 数据库 (sina_futures_realtime表)")
-
-            # 显示合约代码修正统计
-            if self.contract_code_corrections:
-                print(f"\n🔧 合约代码修正统计:")
-                print(f"  修正数量: {len(self.contract_code_corrections)} 个")
-                print(f"  修正列表:")
-                for old_code, new_code in self.contract_code_corrections.items():
-                    print(f"    {old_code} -> {new_code}")
-
-            # 统计合约获取情况
-            print(f"\n📋 合约获取统计:")
-            print(f"  期望获取: {len(self.custom_symbols)} 个合约")
-            print(f"  成功获取: {len(self.captured_symbols)} 个合约")
-
-            # 计算缺失的合约
-            missing_symbols = set(self.custom_symbols) - self.captured_symbols
-            if missing_symbols:
-                print(f"  ❌ 缺失合约: {len(missing_symbols)} 个")
-                print(f"     缺失列表: {', '.join(sorted(missing_symbols))}")
-            else:
-                print(f"  ✓ 全部获取成功！")
-
+            print(f"  入库总记录: {self.total_records}")
+            print(f"  过滤非交易时段记录: {self.filtered_count}")
+            if elapsed > 0 and self.intercept_count > 0:
+                print(f"  拦截频率: {self.intercept_count/elapsed:.2f}次/秒")
             print("=" * 80)
 
-            return self.captured_data
-
-    def _parse_sina_response(self, response_text):
-        """
-        解析新浪财经的响应数据
-        数据格式: var hq_str_nf_V2605="聚氯乙烯,V2605,5123,5140,...";
-        :param response_text: 响应文本
-        :return: 解析后的数据列表
-        """
-        try:
-            data_list = []
-
-            # 使用正则提取所有数据行
-            pattern = r'var hq_str_(.+?)="(.+?)";'
-            matches = re.findall(pattern, response_text)
-
-            for symbol, data_str in matches:
-                # 分割数据字段
-                fields = data_str.split(',')
-
-                # DEBUG: 第一次拦截时打印完整的API响应格式
-                if not self.first_intercept_printed:
-                    print(f"\n{'='*80}")
-                    print(f"[DEBUG] API响应格式分析 - 合约: {symbol}")
-                    print(f"字段总数: {len(fields)}")
-                    print(f"完整响应字符串: {data_str[:200]}...")
-                    print(f"\n字段详情 (前20个):")
-                    for i in range(min(20, len(fields))):
-                        print(f"  fields[{i}] = '{fields[i]}'")
-                    print(f"\n时间字段 (fields[1]): '{fields[1] if len(fields) > 1 else 'N/A'}'")
-                    print(f"{'='*80}\n")
-
-                if len(fields) < 2:
-                    continue
-
-                # 记录成功获取的合约代码
-                # 注意：代码已经在初始化时修正过了，这里直接使用
-                self.captured_symbols.add(symbol)
-
-                # 提取API返回的时间
-                # 根据用户反馈，时间在 fields[1]
-                # 新浪财经API格式：
-                # fields[1] = 时间 (可能是 "15:00:00" 或 "2026-04-07 15:00:00")
-                api_datetime_field = fields[1] if len(fields) > 1 else ''
-
-                # 解析 fields[1]
-                if api_datetime_field:
-                    # 如果包含日期和时间
-                    if ' ' in api_datetime_field and '-' in api_datetime_field:
-                        formatted_datetime = api_datetime_field  # 已经是完整格式
-                    # 如果只有时间 (HH:MM:SS)
-                    elif ':' in api_datetime_field:
-                        # 使用今天的日期 + API返回的时间
-                        today = datetime.now().strftime('%Y-%m-%d')
-                        formatted_datetime = f"{today} {api_datetime_field}"
-                    # 如果是其他格式，直接使用
-                    else:
-                        formatted_datetime = api_datetime_field
-                else:
-                    # 如果API没有返回时间，使用当前时间
-                    formatted_datetime = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-
-                # 构造数据字典
-                # 新浪财经API字段映射（根据实际测试结果）：
-                # fields[0]=品种名称, fields[1]=时间, fields[2]=今开, fields[3]=最高,
-                # fields[4]=最低, fields[5]=最新价, fields[6]=?, fields[7]=买一, fields[8]=卖一,
-                # fields[9]=结算价, fields[10]=昨结算, fields[11-12]=?, fields[13]=持仓量, fields[14]=成交量
-                data = {
-                    '期货代码': symbol.replace('nf_', ''),  # 移除nf_前缀
-                    '名称': fields[0] if len(fields) > 0 else '',
-                    '最新价': fields[5] if len(fields) > 5 else '',        # 修正：fields[5]是最新价
-                    '昨收': fields[10] if len(fields) > 10 else '',       # 修正：fields[10]是昨结算
-                    '今开': fields[2] if len(fields) > 2 else '',         # 修正：fields[2]是今开
-                    '最高': fields[3] if len(fields) > 3 else '',         # 修正：fields[3]是最高
-                    '最低': fields[4] if len(fields) > 4 else '',         # 修正：fields[4]是最低
-                    '买一': fields[7] if len(fields) > 7 else '',         # 修正：fields[7]是买一
-                    '卖一': fields[8] if len(fields) > 8 else '',         # 修正：fields[8]是卖一
-                    '成交量': fields[14] if len(fields) > 14 else '',     # 修正：fields[14]是成交量
-                    '持仓量': fields[13] if len(fields) > 13 else '',     # 修正：fields[13]是持仓量
-                    '时间': formatted_datetime,
-                    '序号': self.intercept_count  # 添加拦截序号
-                }
-
-                data_list.append(data)
-
-            return data_list
-
-        except Exception as e:
-            print(f"✗ 解析响应数据失败: {e}")
-            return []
-
-    def _print_futures_data(self, data_list):
-        """
-        打印期货数据到控制台
-        :param data_list: 数据列表
-        """
-        print("\n" + "-" * 80)
-        print("期货数据详情:")
-        print("-" * 80)
-
-        for data in data_list:
-            print(f"\n【{data['名称']}】 {data['期货代码']}")
-            print(f"  代码: {data['期货代码']}")
-            print(f"  最新价: {data['最新价']}")
-            print(f"  昨收: {data['昨收']}")
-            print(f"  今开: {data['今开']}")
-            print(f"  最高: {data['最高']}")
-            print(f"  最低: {data['最低']}")
-            print(f"  买一: {data['买一']}")
-            print(f"  卖一: {data['卖一']}")
-            print(f"  成交量: {data['成交量']}")
-            print(f"  持仓量: {data['持仓量']}")
-            print(f"  更新时间: {data['时间']}")
-
-        print("-" * 80)
-
-    def _check_missing_symbols(self):
-        """
-        检查缺失的合约
-        :return: 缺失的合约符号列表
-        """
-        if not self.custom_symbols:
-            return []
-
-        missing = set(self.custom_symbols) - self.captured_symbols
-        return sorted(list(missing))
-
-    def _print_missing_symbols(self, missing_symbols):
-        """
-        打印缺失的合约信息
-        :param missing_symbols: 缺失的合约符号列表
-        """
-        if not missing_symbols:
-            return
-
-        print(f"\n{'─' * 80}")
-        print(f"⚠ 缺失合约 ({len(missing_symbols)}个):")
-
-        # 打印缺失的合约，格式：代码 - 名称
-        for symbol in missing_symbols[:20]:  # 最多显示20个
-            name = self.symbol_name_map.get(symbol, '未知')
-            print(f"  • {symbol} - {name}")
-
-        if len(missing_symbols) > 20:
-            print(f"  ... 还有 {len(missing_symbols) - 20} 个合约未显示")
-
-        print(f"{'─' * 80}")
+            return self.total_records
 
 
 def main():
     """
-    主函数 - 启动拦截器（持续监听模式）
+    主函数 - 启动东方财富期货实时数据拦截器
     """
     print("=" * 80)
-    print("新浪财经期货实时数据拦截器 - 持续监听模式")
+    print("东方财富期货实时数据拦截器 - 持续监听模式")
     print("=" * 80)
 
-    # 从数据库自动加载主力合约（成交额>=20亿，保证金<5万，手续费<30元）
-    print("\n正在从数据库加载活跃主力合约...")
-    print("筛选条件: 成交额>=20亿, 保证金<5万, 手续费<30元")
-    db = IndustryDataDB()
-
-    try:
-        # 获取主力合约（成交额>=20亿，保证金<5万，手续费<30元）
-        contracts = db.get_active_main_contracts_simple(
-            min_amount=20.0,          # 成交额>=20亿
-            max_margin=50000.0,       # 保证金<5万
-            max_fee=30.0,             # 手续费<30元
-            use_volume_filter=True    # 启用成交额筛选
-        )
-
-        if not contracts:
-            print("⚠ 警告: 数据库中没有找到符合条件的主力合约")
-            print("使用默认合约列表...")
-            # 使用默认合约列表
-            custom_symbols = [
-                'nf_V2605',   # 聚氯乙烯
-                'nf_LC2703',  # 碳酸锂
-                'nf_TA2605',  # PTA
-                'nf_MA2605',  # 甲醇
-                'nf_AG2606',  # 白银
-            ]
-            # 创建默认的合约名称映射
-            symbol_name_map = {
-                'nf_V2605': '聚氯乙烯',
-                'nf_LC2703': '碳酸锂',
-                'nf_TA2605': 'PTA',
-                'nf_MA2605': '甲醇',
-                'nf_AG2606': '白银'
-            }
-        else:
-            # 转换为新浪财经格式：添加 'nf_' 前缀，并统一转为大写
-            custom_symbols = [f"nf_{contract['contract_code'].upper()}" for contract in contracts]
-
-            # 创建合约代码到品种名称的映射
-            # 需要从数据库重新查询以获取详细信息
-            df = db.query_futures_contracts(is_main_contract=True)
-            symbol_name_map = {}
-            for _, row in df.iterrows():
-                code_upper = row['contract_code'].upper()
-                symbol = f"nf_{code_upper}"
-                if symbol in custom_symbols:
-                    symbol_name_map[symbol] = row['variety_name_cn']
-
-            print(f"✓ 成功加载 {len(custom_symbols)} 个活跃主力合约")
-            print(f"合约列表: {', '.join(custom_symbols[:10])}{'...' if len(custom_symbols) > 10 else ''}")
-
-    except Exception as e:
-        print(f"⚠ 警告: 从数据库加载合约失败: {e}")
-        print("使用默认合约列表...")
-        custom_symbols = [
-            'nf_V2605',   # 聚氯乙烯
-            'nf_LC2703',  # 碳酸锂
-            'nf_TA2605',  # PTA
-            'nf_MA2605',  # 甲醇
-            'nf_AG2606',  # 白银
-        ]
-        symbol_name_map = {
-            'nf_V2605': '聚氯乙烯',
-            'nf_LC2703': '碳酸锂',
-            'nf_TA2605': 'PTA',
-            'nf_MA2605': '甲醇',
-            'nf_AG2606': '白银'
-        }
-
-    print(f"\n配置的期货代码数量: {len(custom_symbols)}")
-    print(f"将持续监听并记录所有实时数据，不丢失任何更新")
-
-    # 创建拦截器
-    interceptor = SinaFuturesInterceptor(
-        headless=False,           # 显示浏览器窗口，便于观察
-        custom_symbols=custom_symbols,
-        symbol_name_map=symbol_name_map,  # 传递合约名称映射
-        continuous=True           # 持续监听模式
+    interceptor = EastMoneyFuturesInterceptor(
+        headless=False,     # 显示浏览器窗口，便于观察
+        continuous=True     # 持续监听模式
     )
 
-    # 运行拦截
     try:
-        data = asyncio.run(interceptor.intercept_futures_data())
-
-        if data:
-            print(f"\n✓ 监听完成，共获取 {len(data)} 条期货数据")
-        else:
-            print("\n程序正常结束")
-
+        total = asyncio.run(interceptor.start())
+        print(f"\n监听完成，共入库 {total} 条记录")
     except KeyboardInterrupt:
         print("\n用户手动停止程序")
     except Exception as e:
-        print(f"\n✗ 程序运行出错: {e}")
+        print(f"\n程序运行出错: {e}")
         import traceback
         traceback.print_exc()
 
