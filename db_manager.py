@@ -1771,7 +1771,7 @@ class IndustryDataDB:
         """
         return self.query_futures_contracts(is_main_contract=True)
 
-    def query_active_main_contracts(self, min_amount: float = 20.0,
+    def query_active_main_contracts(self, min_amount: float = 50.0,
                                     max_margin: float = 50000.0,
                                     max_fee: float = 30.0,
                                     use_volume_filter: bool = False) -> pd.DataFrame:

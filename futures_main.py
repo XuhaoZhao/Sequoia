@@ -138,7 +138,7 @@ def main():
 
     # 设置期货5分钟数据收集任务
     # 设置test_mode=True来立即执行一次测试
-    data_scheduler = setup_futures_scheduled_jobs(test_mode=False)
+    data_scheduler = setup_futures_scheduled_jobs(test_mode=True)
 
     # 注册退出函数，确保程序退出时正确关闭调度器
     atexit.register(stop_scheduled_jobs, data_scheduler)

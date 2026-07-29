@@ -255,7 +255,7 @@ class Futures5MinCollector:
                 failed_contracts.append(f"{variety_name} ({contract_code})")
 
             # 避免请求过于频繁
-            time.sleep(60)
+            time.sleep(5)
 
         # 打印统计信息
         logger.info("=" * 50)
