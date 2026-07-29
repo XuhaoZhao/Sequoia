@@ -143,6 +143,34 @@ class IndustryDataDB:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_futures_contract_code ON futures_contracts(contract_code)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_futures_variety_name ON futures_contracts(variety_name_cn)")
 
+            # 创建新浪期货实时数据表（只存储当天数据）
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS sina_futures_realtime (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    contract_code TEXT NOT NULL,                  -- 合约代码，如 V2605
+                    name TEXT NOT NULL,                           -- 品种名称，如 聚氯乙烯
+                    latest_price REAL,                            -- 最新价
+                    prev_close REAL,                              -- 昨收
+                    open_price REAL,                              -- 今开
+                    high_price REAL,                              -- 最高
+                    low_price REAL,                               -- 最低
+                    bid1 REAL,                                    -- 买一
+                    ask1 REAL,                                    -- 卖一
+                    volume INTEGER,                               -- 成交量
+                    open_interest INTEGER,                        -- 持仓量
+                    datetime TEXT NOT NULL,                       -- 更新时间 (格式: YYYY-MM-DD HH:MM:SS)
+                    sequence INTEGER NOT NULL,                    -- 拦截序号
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- 创建时间
+                    UNIQUE(contract_code, datetime)
+                )
+            """)
+
+            # 创建新浪期货实时数据表的索引
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_sina_realtime_code ON sina_futures_realtime(contract_code)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_sina_realtime_datetime ON sina_futures_realtime(datetime)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_sina_realtime_code_datetime ON sina_futures_realtime(contract_code, datetime)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_sina_realtime_created_at ON sina_futures_realtime(created_at)")
+
             # 创建股票日K结果分析数据表（精细版本）
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS daily_k_analysis (
@@ -220,8 +248,120 @@ class IndustryDataDB:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_daily_k_analysis_ma_arrangement ON daily_k_analysis(ma_arrangement)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_daily_k_analysis_volume_status ON daily_k_analysis(volume_status)")
 
+            # 创建期货品种交易时间表
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS futures_trading_hours (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    variety_name TEXT NOT NULL,                  -- 品种名称，如 鸡蛋、生猪
+                    exchange TEXT NOT NULL,                      -- 所属交易所，如 大商所
+                    exchange_code TEXT,                          -- 交易所代码，如 DCE
+                    day_session TEXT NOT NULL,                   -- 日盘时间，如 9:00-10:15,10:30-11:30,13:30-15:00
+                    night_session TEXT,                          -- 夜盘时间，如 21:00-23:00（无夜盘则为NULL）
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(variety_name, exchange)
+                )
+            """)
+
+            # 创建期货品种交易时间表的索引
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_trading_hours_exchange ON futures_trading_hours(exchange)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_trading_hours_exchange_code ON futures_trading_hours(exchange_code)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_trading_hours_variety ON futures_trading_hours(variety_name)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_trading_hours_night ON futures_trading_hours(night_session)")
+
             conn.commit()
-    
+
+    def insert_futures_trading_hours(self, data: List[Dict]) -> int:
+        """
+        插入期货品种交易时间数据
+
+        Args:
+            data: 交易时间数据列表，每个元素包含:
+                - variety_name: 品种名称
+                - exchange: 所属交易所（中文名）
+                - exchange_code: 交易所代码（可选）
+                - day_session: 日盘时间
+                - night_session: 夜盘时间（可选，无夜盘则为None）
+
+        Returns:
+            成功插入的记录数
+        """
+        if not data:
+            return 0
+
+        inserted_count = 0
+        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+        with self.get_connection() as conn:
+            for record in data:
+                try:
+                    conn.execute("""
+                        INSERT OR REPLACE INTO futures_trading_hours
+                        (variety_name, exchange, exchange_code, day_session, night_session, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, (
+                        record.get('variety_name'),
+                        record.get('exchange'),
+                        record.get('exchange_code'),
+                        record.get('day_session'),
+                        record.get('night_session'),
+                        current_time
+                    ))
+                    inserted_count += 1
+                except sqlite3.Error as e:
+                    print(f"插入期货交易时间数据失败: {e}, 记录: {record.get('variety_name', 'Unknown')}")
+                    continue
+
+            conn.commit()
+
+        return inserted_count
+
+    def query_futures_trading_hours(self, variety_name: str = None,
+                                    exchange: str = None,
+                                    exchange_code: str = None,
+                                    has_night_session: bool = None) -> pd.DataFrame:
+        """
+        查询期货品种交易时间
+
+        Args:
+            variety_name: 品种名称，为None时查询所有
+            exchange: 所属交易所（中文名），为None时查询所有
+            exchange_code: 交易所代码（DCE/CZCE/GFEX/SHFE/INE/CFFEX），为None时查询所有
+            has_night_session: 是否有夜盘，None时不筛选
+
+        Returns:
+            包含交易时间的DataFrame
+        """
+        with self.get_connection() as conn:
+            sql = "SELECT * FROM futures_trading_hours WHERE 1=1"
+            params = []
+
+            if variety_name:
+                sql += " AND variety_name = ?"
+                params.append(variety_name)
+
+            if exchange:
+                sql += " AND exchange = ?"
+                params.append(exchange)
+
+            if exchange_code:
+                sql += " AND exchange_code = ?"
+                params.append(exchange_code)
+
+            if has_night_session is True:
+                sql += " AND night_session IS NOT NULL"
+            elif has_night_session is False:
+                sql += " AND night_session IS NULL"
+
+            sql += " ORDER BY exchange_code, variety_name"
+
+            try:
+                df = pd.read_sql_query(sql, conn, params=params)
+                return df
+            except sqlite3.Error as e:
+                print(f"查询期货交易时间数据失败: {e}")
+                return pd.DataFrame()
+
     def _get_table_name(self, period: str, year_month: str) -> str:
         """
         生成表名
@@ -2197,3 +2337,192 @@ class IndustryDataDB:
             result_df = result_df.tail(limit)
 
         return result_df
+
+
+    def insert_sina_futures_realtime(self, data_list: List[Dict]) -> int:
+        """
+        插入新浪期货实时数据（带去重，使用REPLACE更新重复数据）
+
+        Args:
+            data_list: 期货实时数据列表
+
+        Returns:
+            成功插入/更新的记录数
+        """
+        if not data_list:
+            return 0
+
+        inserted_count = 0
+        updated_count = 0
+
+        with self.get_connection() as conn:
+            for record in data_list:
+                try:
+                    conn.execute("""
+                        INSERT OR REPLACE INTO sina_futures_realtime
+                        (contract_code, name, latest_price, prev_close, open_price,
+                         high_price, low_price, bid1, ask1, volume, open_interest, datetime, sequence)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        record.get('期货代码'),                    # contract_code
+                        record.get('名称'),                        # name
+                        self._safe_float(record.get('最新价')),    # latest_price
+                        self._safe_float(record.get('昨收')),      # prev_close
+                        self._safe_float(record.get('今开')),      # open_price
+                        self._safe_float(record.get('最高')),      # high_price
+                        self._safe_float(record.get('最低')),      # low_price
+                        self._safe_float(record.get('买一')),      # bid1
+                        self._safe_float(record.get('卖一')),      # ask1
+                        self._safe_int(record.get('成交量')),      # volume
+                        self._safe_int(record.get('持仓量')),      # open_interest
+                        record.get('时间'),                        # datetime
+                        record.get('序号')                         # sequence
+                    ))
+                    # 每次成功插入都计数（包括新插入和替换更新）
+                    inserted_count += 1
+                except sqlite3.Error as e:
+                    print(f"插入新浪期货实时数据失败: {e}, 记录: {record.get('期货代码', 'Unknown')}")
+                    continue
+
+            conn.commit()
+
+        return inserted_count
+
+    def query_sina_futures_realtime(self, contract_code: str = None, start_datetime: str = None,
+                                    end_datetime: str = None, limit: int = None) -> pd.DataFrame:
+        """
+        查询新浪期货实时数据
+
+        Args:
+            contract_code: 合约代码，为None时查询所有
+            start_datetime: 开始时间 (格式: YYYY-MM-DD HH:MM:SS)
+            end_datetime: 结束时间 (格式: YYYY-MM-DD HH:MM:SS)
+            limit: 限制返回记录数
+
+        Returns:
+            包含期货实时数据的DataFrame
+        """
+        with self.get_connection() as conn:
+            sql = "SELECT * FROM sina_futures_realtime WHERE 1=1"
+            params = []
+
+            if contract_code:
+                sql += " AND contract_code = ?"
+                params.append(contract_code)
+
+            if start_datetime:
+                sql += " AND datetime >= ?"
+                params.append(start_datetime)
+
+            if end_datetime:
+                sql += " AND datetime <= ?"
+                params.append(end_datetime)
+
+            sql += " ORDER BY datetime DESC, sequence DESC"
+
+            if limit:
+                sql += f" LIMIT {limit}"
+
+            try:
+                df = pd.read_sql_query(sql, conn, params=params)
+                return df
+            except sqlite3.Error as e:
+                print(f"查询新浪期货实时数据失败: {e}")
+                return pd.DataFrame()
+
+    def clear_sina_futures_realtime(self) -> int:
+        """
+        清空新浪期货实时数据表
+
+        Returns:
+            成功删除的记录数
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.execute("DELETE FROM sina_futures_realtime")
+                deleted_count = cursor.rowcount
+                conn.commit()
+
+                print(f"成功清空新浪期货实时数据表，共删除 {deleted_count} 条记录")
+                return deleted_count
+
+        except sqlite3.Error as e:
+            print(f"清空新浪期货实时数据表失败: {e}")
+            return 0
+
+    def delete_sina_futures_realtime_by_time_range(self, start_datetime: str = None, end_datetime: str = None) -> int:
+        """
+        按时间范围删除新浪期货实时数据
+
+        Args:
+            start_datetime: 开始时间 (格式: YYYY-MM-DD HH:MM:SS)
+            end_datetime: 结束时间 (格式: YYYY-MM-DD HH:MM:SS)
+
+        Returns:
+            成功删除的记录数
+
+        Examples:
+            # 删除指定时间段的数据
+            db.delete_sina_futures_realtime_by_time_range(
+                start_datetime="2026-04-01 00:00:00",
+                end_datetime="2026-04-01 23:59:59"
+            )
+
+            # 删除某个日期之后的所有数据
+            db.delete_sina_futures_realtime_by_time_range(start_datetime="2026-04-01 00:00:00")
+
+            # 删除某个日期之前的所有数据
+            db.delete_sina_futures_realtime_by_time_range(end_datetime="2026-04-01 00:00:00")
+        """
+        try:
+            with self.get_connection() as conn:
+                # 先查询将要删除的记录数量
+                count_sql = "SELECT COUNT(*) FROM sina_futures_realtime WHERE 1=1"
+                count_params = []
+
+                if start_datetime:
+                    count_sql += " AND datetime >= ?"
+                    count_params.append(start_datetime)
+
+                if end_datetime:
+                    count_sql += " AND datetime <= ?"
+                    count_params.append(end_datetime)
+
+                cursor = conn.execute(count_sql, count_params)
+                delete_count = cursor.fetchone()[0]
+
+                if delete_count == 0:
+                    print(f"没有找到符合时间条件的数据需要删除")
+                    return 0
+
+                # 执行删除操作
+                delete_sql = "DELETE FROM sina_futures_realtime WHERE 1=1"
+                delete_params = []
+
+                if start_datetime:
+                    delete_sql += " AND datetime >= ?"
+                    delete_params.append(start_datetime)
+
+                if end_datetime:
+                    delete_sql += " AND datetime <= ?"
+                    delete_params.append(end_datetime)
+
+                cursor = conn.execute(delete_sql, delete_params)
+                deleted_count = cursor.rowcount
+                conn.commit()
+
+                # 打印详细信息
+                condition_desc = []
+                if start_datetime:
+                    condition_desc.append(f"起始时间 >= {start_datetime}")
+                if end_datetime:
+                    condition_desc.append(f"结束时间 <= {end_datetime}")
+
+                condition_str = " 且 ".join(condition_desc) if condition_desc else "所有数据"
+                print(f"成功删除 {deleted_count} 条新浪期货实时数据 (条件: {condition_str})")
+                return deleted_count
+
+        except sqlite3.Error as e:
+            print(f"删除新浪期货实时数据失败: {e}")
+            return 0
+

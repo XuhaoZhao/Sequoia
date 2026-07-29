@@ -214,6 +214,11 @@ class JiuqiWebParser:
                             # 格式: "白银2606 (ag2606)" 或 "螺纹钢2605 (rb2605)"
                             contract_code, variety_code, variety_name_cn = self._parse_contract_info(contract_info)
 
+                            # 过滤掉国债期货（如果品种名称中包含"国债"则跳过）
+                            if '国债' in variety_name_cn:
+                                logging.debug(f"  跳过国债合约: {contract_info} ({variety_name_cn})")
+                                continue
+
                             # 判断是否主力合约
                             is_main_contract = '是' if '主力合约' in remark else '否'
 
@@ -454,11 +459,17 @@ class JiuqiWebParser:
         # 3. 打印数据摘要
         self.print_data_summary(data)
 
-        # 4. 保存到数据库
+        # 4. 全量更新：先清空表，再全量插入
         try:
-            logging.info("开始保存数据到数据库...")
+            # 先清空futures_contracts表
+            logging.info("开始清空futures_contracts表（全量更新模式）...")
+            deleted_count = self.db.clear_table_futures_contracts()
+            logging.info(f"✓ 已清空 {deleted_count} 条旧数据")
+
+            # 再全量插入新数据
+            logging.info("开始全量插入新数据到数据库...")
             inserted_count = self.db.insert_futures_contracts(data)
-            logging.info(f"✓ 成功保存 {inserted_count} 条期货合约数据到数据库")
+            logging.info(f"✓ 成功插入 {inserted_count} 条期货合约数据到数据库")
 
             # 统计主力合约数量
             main_count = sum(1 for d in data if d.get('是否主力合约') == '是')
